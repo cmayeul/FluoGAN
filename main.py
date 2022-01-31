@@ -126,28 +126,11 @@ def main(Y, rep, conf = "parameters") :
     #init FISTA generator optimizer
     prox_x = prox_l1(params['g_x_l1'])
     g_x_optimizer = FISTA_Optimizer(G.x,
-                                    params['g_x_lr'],
+                                    1 / params['g_x_lr'],
                                     f, g,
-                                    eta=1.1 ,
+                                    params['g_x_eta'] ,
                                     prox=prox_x)
     g_b_optimizer = ISTA_Optimizer([G.bg.b],  [0], [params['g_b_lr']])
-    
-    
-    #if not fista ADAM optimizer is used
-    # if not params['fista'] : 
-    #     g_x_optimizer = torch.optim.Adam([G.x], lr=params['g_x_lr'])
-    #     #g_b_optimizer = torch.optim.Adam([G.bg.b, G.cb.b], lr=params['g_b_lr'])
-    #     g_b_optimizer = torch.optim.Adam([G.bg.b], lr=params['g_b_lr'])
-    #     g_optimizer = MultipleOptimizer(g_x_optimizer, g_b_optimizer)
-    # #else use fista or ista
-    # else : 
-    #     #g_optimizer = ISTA_Optimizer(params = [G.x, G.bg.b, G.cb.b], 
-    #     #                             coeffs = [params['g_x_l1'], 0, 0], 
-    #     #                             lr = [params['g_x_lr'], params['g_b_lr'], params['g_b_lr']])
-    #     g_optimizer = ISTA_Optimizer(params = [G.x, G.bg.b], 
-    #                               coeffs = [params['g_x_l1'], 0], 
-    #                               lr = [params['g_x_lr'], params['g_b_lr']])
-    
     
     # start training
     g_losses, d_losses, x, b  =  train(G, D, Y, 
@@ -161,17 +144,14 @@ def main(Y, rep, conf = "parameters") :
         torch.save(G, rep / 'G')
         torch.save(D, rep / 'D')
     
-    #plot grad, ysim, yreal and final x
+    #plot ysim, yreal and final x
     if params["plot_results"] :
-        #plt.imshow(G.x.grad.cpu());plt.colorbar();plt.title("grad");plt.show()
         plt.imshow(G(1)[0,0].detach().cpu());plt.colorbar();plt.title("ysim")
         plt.savefig(rep / "ysim.png");plt.show()
         plt.imshow(Y[0,0].detach().cpu());plt.colorbar();plt.title("yreal") 
         plt.savefig(rep / "yreal.png");plt.show()
-        #plt.imshow(xreal.cpu());plt.colorbar();plt.title("xreal");plt.show()
         plt.imshow(G.x.detach().cpu());plt.colorbar();plt.title("x") 
         plt.savefig(rep / "x.png");plt.show()
-        #plt.imshow((G.cb.b + G.bg.b).detach().cpu());plt.colorbar();plt.title("b") 
         plt.imshow(G.bg.b.detach().cpu());plt.colorbar();plt.title("b") 
         plt.savefig(rep / "b.png");plt.show()
         imsave(rep / "x-img.png", G.x.detach().cpu())

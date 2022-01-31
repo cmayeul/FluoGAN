@@ -3,7 +3,7 @@
 
 import torch
 import torch.nn as nn
-from fft_conv import fft_conv
+from fft_conv_pytorch import fft_conv
 
 
 class Generator(nn.Module):
@@ -45,8 +45,6 @@ class Generator(nn.Module):
         self.conv = FFTConv2dConstKernel(kwidth, ksigma, undersampling, x0.dtype, x0.device) #diffraction
         self.relu = nn.ReLU() 
         self.bg = Background(b0) #out of focus emitters
-        #self.bg = Background(b0 - b0.mean()) #out of focus emitters
-        #self.cb = ConstBackground(b0.mean(), x0.dtype, x0.device) #ambiant noise 
         self.poisson = PoissonProcess(alpha) #emission
         self.noise = GaussianNoise(esigma) #acquisition noise
         self.relu2 = nn.ReLU()
@@ -60,7 +58,6 @@ class Generator(nn.Module):
         phi = self.conv(phi)
         phi = self.relu(phi)
         phi = self.bg(phi)
-        #phi = self.cb(phi)
         phi = self.relu(phi)
         self.phi = phi
         
@@ -207,25 +204,6 @@ class Background(nn.Module):
         return gx**2 + gy**2
 
 
-class ConstBackground(nn.Module) :
-    """
-    Add a constant background to image whose value is a nn.Parameter 
-    and thus can be optimized like other parameters
-    """
-    
-    def __init__(self, b0, dtype, device) :
-        """
-        Initialise constant background with b0 real or tensor value
-        """
-        super().__init__()
-        
-        if type(b0) is torch.Tensor : 
-            self.b = nn.Parameter(b0.clone().to(dtype).to(device))
-        else :
-            self.b = nn.Parameter(torch.tensor(b0, dtype=dtype, device=device))
-        
-    def forward(self, x):
-        return x + self.b
 
 class Conv2dConstKernel(nn.Module):
     """ 

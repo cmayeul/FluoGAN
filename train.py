@@ -195,8 +195,6 @@ def train(G, D, Y,
     """
     
     d_losses = {"d_gp" : [], "total" : []}
-    #g_losses = {"g_x_l1" : [], "g_x_nneg" : [], "g_l2" : [], "g_D" : [], 
-    #            "g_b_l2" : [], "g_b_nneg" : [], "g_b_grad" : [], "total" : []}
     g_losses = {"g_x_l1" : [], "g_l2" : [], "g_D" : [], "g_b_grad" : [], "total" : []}
     
     x = []
@@ -208,25 +206,13 @@ def train(G, D, Y,
     #for each epoch, train first the discriminator and then update x
     for epoch in tqdm(range(params['n_epochs']), desc="Learning...") :
         
-        #######TEST########
-        # if epoch % 100 == 0 and epoch > 600: 
-        #     for lr in g_optimizer.lr :
-        #         lr *= .8
-        #     state_dict = d_optimizer.state_dict()
-        #     state_dict['param_groups'][0]['lr'] *= .8
-        #     d_optimizer.load_state_dict(state_dict)
-        ###################
-        
         #plot x each 50 epochs : 
         if epoch % 50 == 0 :
-            #plt.imshow(G.x.detach().cpu());plt.colorbar();plt.title(f"x{epoch}");plt.show()
             x.append(G.x.detach().clone())
-            #b.append((G.cb.b + G.bg.b).detach().clone())
             b.append(G.bg.b.detach().clone())
             
             if epoch > 0 : imsave(rep / f"x{epoch}-img.png", G.x.detach().cpu())
-            #imsave(rep / f"b{epoch}-img.png", G.bg.b.detach().cpu())
-            #if epoch > 0 : imsave(rep / f"ysim{epoch}-img.png", G(1).detach()[0,0].cpu())
+
         
         #train D for n_critic steps
         for ii in range(params['n_discriminator']) : 
@@ -266,55 +252,31 @@ def train(G, D, Y,
         #train G for n_generator steps
         for ii in range(params['n_generator']) :
             G.zero_grad()
-            
-            # #compute L1 regularization and non negativity term
-            # zero = torch.zeros(1, dtype=G.x.dtype, device=G.x.device)
-            # G.x.grad  = params['g_x_l1']  *  torch.ones_like(G.x)
-            # G.x.grad += params['g_x_nneg'] * 2 * G.x.minimum(zero)
-                 
-            # #regularizations on b and b0 to keep sum non negative
-            # zero = torch.zeros(1, dtype=G.bg.b.dtype, device=G.bg.b.device)
-            # #g_b_nneg_grad = params['g_b_nneg'] * 2 * (G.bg.b + G.cb.b).minimum(zero)
-            # g_b_nneg_grad = params['g_b_nneg'] * 2 * G.bg.b.minimum(zero)
-            # G.bg.b.grad  = g_b_nneg_grad
-            # #G.cb.b.grad  = g_b_nneg_grad.sum()
         
-            #compute grads to regularize b and keep it smooth and low
+            #compute grads to regularize b and keep it smooth
             G.bg.b.grad = params['g_b_grad'] * G.bg.spatial_grad_norm_derivative()[0,0]
-            #G.bg.b.grad += params['g_b_l2']   * 2 * G.bg.b.detach()
             
             #sample a batch of simulated images 
             ysim = G(batch_size)
             
             #compute l2 fidelity term and its gradient
-            # Ymean = Y.mean(axis=0)
-            # g_l2_func = lambda y : params['g_l2'] * ((y-Ymean)**2).sum()
             G.compute_grad_2(g_l2_func, ysim, [G.x, G.bg.b])
             
             #compute gradient of expectation of the distance wrt x
-            # g_D_func = lambda y : params['g_D'] * (1 - D(y)).mean() * G.x.shape[0] * G.x.shape[1]
             G.compute_grad_2(g_D_func, ysim, [G.x, G.bg.b])
 
-            #if params['save_losses'] : 
-            #compute explicit loss (to plot or save them)
+            #compute explicit loss to plot them and for FISTA next step update
             g_x_l1   = params['g_x_l1']   *  G.x.abs().sum()
-            # g_x_nneg = params['g_x_nneg'] *  (G.x.minimum(zero)**2).sum()
             g_b_grad = params['g_b_grad'] *  G.bg.spatial_grad_norm().sum()
-            #g_b_nneg = params['g_b_nneg'] * ((G.cb.b + G.bg.b).minimum(zero)**2).sum()
-            # g_b_nneg = params['g_b_nneg'] * (G.bg.b.minimum(zero)**2).sum()
-            #g_b_l2   = params['g_b_l2']   * (G.bg.b ** 2).sum()
+            
             g_l2     = g_l2_func(ysim)
             g_D      = g_D_func(ysim)
 
             #save loss
             g_losses['g_x_l1'].append(float(g_x_l1))
-            # g_losses['g_x_nneg'].append(float(g_x_nneg))
             g_losses['g_b_grad'].append(float(g_b_grad))
-            # g_losses['g_b_nneg'].append(float(g_b_nneg))
-            #g_losses['g_b_l2'].append(float(g_b_l2))
             g_losses['g_l2'].append(float(g_l2))
             g_losses['g_D'].append(float(g_D))
-            #g_losses['total'].append(float(g_x_l1 + g_x_nneg + g_b_grad + g_b_nneg + g_b_l2 + g_l2 + g_D))
             g_losses['total'].append(float(g_b_grad +  g_l2 + g_D + g_x_l1))
             
             #update G.x with optimizer

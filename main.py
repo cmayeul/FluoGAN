@@ -196,42 +196,42 @@ def main(Y, rep, conf = "parameters") :
 
 if __name__ == "__main__" : 
     # #parameters 
-    # undersampling = 4
-    # alpha = 20
-    # ksigma = 8
-    # kwidth = 81
-    # esigma = 0.
-    # frames = 500
+    undersampling = 4
+    alpha = 20
+    ksigma = 8
+    kwidth = 81
+    esigma = 0.
+    frames = 500
     
     #load lif file
-    reader = read_lif.Reader("../donnees_ostreopsis/ArgoLight.lif")
-    series = reader.getSeries()
-    data = torch.stack([torch.from_numpy(img) for t,img in series[0].enumByFrame()]).to(device)
-    Y = torch.zeros(500,1,50,630).to(device)
-    dy = 0
-    for i in range(500): 
-        if i % 86 == 0 :
-            dy -= 1
-        Y[i,0] = data[i, 200:250, 20+dy:650+dy].float()
-    #Y = data[100:600,200:250,200:250].view(500,1,50,50).float()
-    Yval = data[600:650,200:250,20:650].view(50,1,50,630).float()
-    out_shape = Y.shape[2:]
+    # reader = read_lif.Reader("../donnees_ostreopsis/ArgoLight.lif")
+    # series = reader.getSeries()
+    # data = torch.stack([torch.from_numpy(img) for t,img in series[0].enumByFrame()]).to(device)
+    # Y = torch.zeros(500,1,50,630).to(device)
+    # dy = 0
+    # for i in range(500): 
+    #     if i % 86 == 0 :
+    #         dy -= 1
+    #     Y[i,0] = data[i, 200:250, 20+dy:650+dy].float()
+    # #Y = data[100:600,200:250,200:250].view(500,1,50,50).float()
+    # Yval = data[600:650,200:250,20:650].view(50,1,50,630).float()
+    # out_shape = Y.shape[2:]
     
     #load image
-    # xreal = read_image("../tests/xreal.png")[1,...].to(device)
-    # #normalize the image 
-    # xreal //= 10
-    # #compute shape of output image 
-    # out_shape = (xreal.shape[0] // undersampling, xreal.shape[1] // undersampling)
-    # #resize yreal to length and width multiples of stride (to avoid rounding problems)
-    # xreal = xreal[:undersampling * out_shape[0], :undersampling * out_shape[1]]
-    # #simulate real data
-    # b0 = 5*torch.zeros(40,40, device=device).float() #uniform
-    # # b0 = 1 + torch.arange(40, device=device).float().expand(40,40) / 40 #linear
-    # #"real data" generator and values
-    # G0 = Generator(out_shape,kwidth,ksigma,undersampling,alpha,esigma,x0=xreal.float(), b0=b0).to(device)
-    # Y = G0(frames)
-    # Yval = G0(frames)
+    xreal = read_image("../tests/xreal.png")[1,...].to(device)
+    #normalize the image 
+    xreal //= 10
+    #compute shape of output image 
+    out_shape = (xreal.shape[0] // undersampling, xreal.shape[1] // undersampling)
+    #resize yreal to length and width multiples of stride (to avoid rounding problems)
+    xreal = xreal[:undersampling * out_shape[0], :undersampling * out_shape[1]]
+    #simulate real data
+    b0 = 5*torch.zeros(40,40, device=device).float() #uniform
+    # b0 = 1 + torch.arange(40, device=device).float().expand(40,40) / 40 #linear
+    #"real data" generator and values
+    G0 = Generator(out_shape,kwidth,ksigma,undersampling,alpha,esigma,x0=xreal.float(), b0=b0).to(device)
+    Y = G0(frames)
+    Yval = G0(frames)
     
     #use real data from video
     # Y = read_video("../donnees_ostreopsis/ostreo.m4v")[0][:500,50:-50,150:-150,0].to(device)
@@ -240,7 +240,7 @@ if __name__ == "__main__" :
     # Yval = Yval.float().view(50,1,*Yval.shape[1:])
     # out_shape = Y.shape[2:]
     
-    main(Y,"../tests/fantome13")
+    main(Y,"../tests/fantome14")
     
     
     

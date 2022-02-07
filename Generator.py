@@ -33,7 +33,7 @@ class Generator(nn.Module):
         #initialisation of x and b
         if x0 is None : 
             h,w = out_shape
-            x0 = torch.ones((h*undersampling, w*undersampling))
+            x0 = torch.ones((h*undersampling + 2*(kwidth //2), w*undersampling + 2*(kwidth//2)))
             
         if b0 is None :
             b0 = torch.zeros(out_shape, device=x0.device, dtype=x0.dtype)
@@ -281,7 +281,7 @@ class Conv2dConstKernel(nn.Module):
         """
 
         return self.conv(x, self.kernel, \
-                        padding=(self.kwidth//2, self.kwidth//2), \
+                        padding=(0,0), \
                         stride=self.undersampling)
             
 

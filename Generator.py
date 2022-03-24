@@ -42,7 +42,7 @@ class Generator(nn.Module):
         self.alpha = alpha
         
         #The layers for simulator
-        self.conv = FFTConv2dConstKernel(kwidth, ksigma, undersampling, x0.dtype, x0.device) #diffraction
+        self.conv = Conv2dConstKernel(kwidth, ksigma, undersampling, x0.dtype, x0.device) #diffraction
         self.relu = nn.ReLU() 
         self.bg = Background(b0) #out of focus emitters
         self.poisson = PoissonProcess(alpha) #emission

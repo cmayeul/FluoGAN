@@ -1,8 +1,8 @@
 {
-  "input": "/home/mayeul/Documents/3A/stage/donnees_ostreopsis/ArgoLight.lif",
+  "input": "/home/mayeul/Documents/3A/stage/donnees_ostreopsis/ArgLight0.mp4",
   "output": "/home/mayeul/Documents/3A/stage/SRGAN/test",
   "index": 0,
-  "n_images": null,
+  "n_images": 200,
   "params": null,
   "alpha": 20,
   "kwidth": 81,

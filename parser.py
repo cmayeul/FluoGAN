@@ -99,7 +99,7 @@ def load_data(args, device) :
         data = gen_synthetic_data(args["input"])
         
     else :
-        data = read_video(args["input"])[0][..., args["index"]]
+        data = read_video(str(args["input"]))[0][..., args["index"]]
 
     #take only the first n_img if this parameter is not None
     if args["n_images"] is not None :
@@ -391,4 +391,5 @@ if __name__ == "__main__" :
     parser.add_argument("-r", "--plot_results", action="store_true",
                         help="plot and save x and b as plt with their scale")
 
-    main(sys.argv[1:], parser.parse_args(), parser)
+    #main(sys.argv[1:], parser.parse_args(), parser)
+    main(["test"], parser.parse_args(["test"]), parser)

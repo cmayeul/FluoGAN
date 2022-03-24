@@ -279,7 +279,6 @@ class Conv2dConstKernel(nn.Module):
         -------
         y : tensor of same shape like x
         """
-
         return self.conv(x, self.kernel, \
                         padding=(0,0), \
                         stride=self.undersampling)

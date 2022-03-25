@@ -18,6 +18,8 @@ from Generator import Generator
 from Discriminator import Discriminator
 from train import train, MultipleOptimizer, ISTA_Optimizer, prox_l1, FISTA_Optimizer
 
+torch.cuda.empty_cache()
+
 
 def load_parameters(args, parsed_args, parser) : 
     #initialize a list containing paths to json parameters file to load
@@ -76,40 +78,45 @@ def load_parameters(args, parsed_args, parser) :
     
     return params
 
-def load_data(args, device) :
-    if args["input"] is None  :
+def load_data(params, device) :
+    if params["input"] is None  :
         raise ValueError("No input")
-    elif not Path(args["input"]).is_file() :
-        raise ValueError("Invalid input file : {args['input']}")
+    elif not Path(params["input"]).is_file() :
+        raise ValueError("Invalid input file : {params['input']}")
         
-    extension = args["input"].suffix[1:]
+    extension = params["input"].suffix[1:]
 
     if extension == "lif" : 
-        reader = read_lif.Reader(args["input"])
+        reader = read_lif.Reader(params["input"])
         series = reader.getSeries()
         data = torch.stack([torch.from_numpy(img) \
-                            for t,img in series[args["index"]].enumByFrame()])
+                            for t,img in series[params["index"]].enumByFrame()])
       
     elif extension == "tif" : 
-        data = imread(args["input"])
+        data = imread(params["input"])
         data = torch.from_numpy(data)
         
     elif extension in ["png", "jpeg", "JPG", "JPEG"] :
         #in case the input is an image, then generate a synthetic dataset
-        data = gen_synthetic_data(args["input"])
+        data = gen_synthetic_data(params["input"])
         
     else :
-        data = read_video(str(args["input"]))[0][..., args["index"]]
+        data = read_video(str(params["input"]))[0][..., params["index"]]
 
     #take only the first n_img if this parameter is not None
-    if args["n_images"] is not None :
-        if args["n_images"] > len(data) : 
-            raise ValueError(f"There are only {len(data)} images in this dataset but {args['n_images']} are required from parameters")
+    if params["n_images"] is not None :
+        if params["n_images"] > len(data) : 
+            raise ValueError(f"There are only {len(data)} images in this dataset but {params['n_images']} are required from parameters")
         else : 
-            data = data[:args["n_images"]]
+            data = data[:params["n_images"]]
 
-    #send data to device and reshape it to pytorch standard (N, C, H, W)
-    data = data.view(data.shape[0], 1, *data.shape[1:]).to(device)
+    #crop the data,reshape it to pytorch standard (N, C, H, W) and send it to device
+    if params['crop'] is not None :
+        xmin, ymin, xmax, ymax = params['crop']
+        data = data[:, xmin:xmax, ymin:ymax]
+    data = data.view(data.shape[0], 1, *data.shape[1:])
+    data = data.to(device).to(torch.float)
+    
     return data
 
 
@@ -179,7 +186,6 @@ def main(args, parsed_args, parser) :
                  alpha          = params["alpha"], 
                  esigma         = params["esigma"]
                  ).to(device)
-    G.compute_phi()
 
     #init discriminator (critic)
     ysim = G(1)
@@ -231,6 +237,7 @@ def main(args, parsed_args, parser) :
                                     f, g,
                                     params['g_x_eta'] ,
                                     prox=prox_x)
+    #g_x_optimizer = ISTA_Optimizer([G.x], [params['g_x_l1']], [params['g_x_lr']])
     g_b_optimizer = ISTA_Optimizer([G.bg.b],  [0], [params['g_b_lr']])
     
     # start training
@@ -310,16 +317,20 @@ if __name__ == "__main__" :
     
     parser.add_argument("-o", "--output", type=str, default="./", 
                         help="output directory, default : ./")
+    parser.add_argument("-p", "--params", type=str, default=None,
+                        help="load parameters from a json file \
+                        parameters are loaded in this order : \
+                        1. CLI, 2. JSON file, 3. default")
     
     parser.add_argument("-i", "--index", type=int, default=0,
                         help="in case of lif input give the serie index \
                         in case of a video input give the channel index")
     parser.add_argument("-n_img", "--n_images", type=int, default=None,
                         help="take only the n_img first image from the input serie")
-    parser.add_argument("-p", "--params", type=str, default=None,
-                        help="load parameters from a json file \
-                        parameters are loaded in this order : \
-                        1. CLI, 2. JSON file, 3. default")
+    parser.add_argument("-x", "--crop", type=int, default=None, nargs=4,
+                        help="select only a region of the input data \
+                        give the crop window coordinates xmin ymin xmax ymax")
+
     
     #model for the generator
     parser.add_argument("-a", "--alpha", type=int, default=20, 

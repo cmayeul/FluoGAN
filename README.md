@@ -57,4 +57,6 @@ optional arguments:
 
 ./main.py input.lif -p parameters.json
 
+## References
 
+fft_conv from https://github.com/fkodom/fft-conv-pytorch

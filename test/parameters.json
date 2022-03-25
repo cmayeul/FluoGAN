@@ -1,14 +1,14 @@
 {
-  "input": "/home/mayeul/Documents/3A/stage/donnees_ostreopsis/ArgLight0.mp4",
+  "input": "/home/mayeul/Documents/3A/stage/donnees_ostreopsis/Export-TempFluc.tif",
   "output": "/home/mayeul/Documents/3A/stage/SRGAN/test",
   "index": 0,
-  "n_images": 200,
+  "n_images": 500,
   "params": null,
   "alpha": 20,
   "kwidth": 81,
   "ksigma": 8.0,
   "undersampling": 4,
-  "esigma": 0.0,
+  "esigma": 100.0,
   "c": 32,
   "n_conv": 3,
   "conv_k_size": 5,
@@ -20,15 +20,21 @@
   "g_b_grad": 1.0,
   "n_discriminator": 1,
   "n_generator": 1,
-  "n_epochs": 1,
+  "n_epochs": 10,
   "batch_size": 32,
   "cpu": false,
   "d_lr": 1e-05,
-  "g_x_lr": 0.25,
+  "g_x_lr": 4.0,
   "g_b_lr": 0.001,
   "g_x_eta": 2.0,
   "save_losses": false,
   "save_models": false,
   "save_video": false,
-  "plot_results": false
+  "plot_results": false,
+  "crop": [
+    250,
+    250,
+    300,
+    300
+  ]
 }

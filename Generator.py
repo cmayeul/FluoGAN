@@ -3,7 +3,7 @@
 
 import torch
 import torch.nn as nn
-from fft_conv_pytorch import fft_conv
+from fft_conv import fft_conv
 
 
 class Generator(nn.Module):
@@ -42,7 +42,7 @@ class Generator(nn.Module):
         self.alpha = alpha
         
         #The layers for simulator
-        self.conv = Conv2dConstKernel(kwidth, ksigma, undersampling, x0.dtype, x0.device) #diffraction
+        self.conv = FFTConv2dConstKernel(kwidth, ksigma, undersampling, x0.dtype, x0.device) #diffraction
         self.relu = nn.ReLU() 
         self.bg = Background(b0) #out of focus emitters
         self.poisson = PoissonProcess(alpha) #emission
@@ -54,12 +54,24 @@ class Generator(nn.Module):
         self.compute_phi()
         
     def compute_phi(self) : 
+        """
+        precompute the first steps of computation because they do not 
+        change at each evaluation.
+        """
         phi = self.x.view(1,1,*self.x.shape)
         phi = self.conv(phi)
         phi = self.relu(phi)
         phi = self.bg(phi)
         phi = self.relu(phi)
         self.phi = phi
+        
+    def to(self, *args, **kargs) : 
+        """ 
+        rewrite the general "to" method to update phi computation
+        """
+        res = super().to(*args,**kargs)
+        self.compute_phi()
+        return res
         
     def update_x(self,x) :
         self.x.data = x
@@ -203,7 +215,7 @@ class Background(nn.Module):
         
         return gx**2 + gy**2
 
-
+        
 
 class Conv2dConstKernel(nn.Module):
     """ 
@@ -292,6 +304,8 @@ class FFTConv2dConstKernel(Conv2dConstKernel):
     
     def __init__(self,*args,conv=fft_conv,**kargs) : 
         super().__init__(*args,conv,**kargs)
+    
+            
 
 class PoissonProcess(nn.Module):
     def __init__(self,alpha):

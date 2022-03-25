@@ -207,7 +207,7 @@ def train(G, D, Y,
     for epoch in tqdm(range(params['n_epochs']), desc="Learning...") :
         
         #plot x each 50 epochs : 
-        if epoch % 50 == 0 :
+        if epoch % 1 == 0 :
             x.append(G.x.detach().clone())
             b.append(G.bg.b.detach().clone())
             
@@ -281,6 +281,7 @@ def train(G, D, Y,
             
             #update G.x with optimizer
             g_x_optimizer.backtracking_step_2(g_losses['total'][-1])
+            #g_x_optimizer.step()
             g_b_optimizer.step()
             G.compute_phi()
                 

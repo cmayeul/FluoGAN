@@ -33,7 +33,7 @@ class FISTA_Optimizer:
     This optimizer implements FISTA proximal algorithm, which is an fast 
     version of ISTA, given a proximal operator prox.
     """
-    def __init__(self, x, L, f, g=l1, eta=1.1, prox=prox_l1, t0=1) :
+    def __init__(self, x, L, f, g=l1, eta=1.1, prox=prox_l1, t0=1, Lmax=float('inf')) :
         """
         Init a FISTA optimizer that minimizes F(x) = f(x) + g(x) with 
         f a smooth fidelity term and g a non smooth regularization (example :
@@ -59,9 +59,13 @@ class FISTA_Optimizer:
             Corresponding proximal operator which need the step L 
         t : float, optional
             Initialization of parameter t in FISTA algorithm. The default is 1.
+        Lmax : float, optional
+            max value for the stepsize L, default : inf
         """
         self.eta = eta
         self.L = L
+        self.Lmax = Lmax
+        self.stepsizes = []
         self.prox = prox
         
         self.t0 = torch.tensor(t0)
@@ -114,11 +118,15 @@ class FISTA_Optimizer:
             self.x = self.prox(self.L, self.u)
             
             #find the right L :
-            while float(self.F(self.x)) > float(self.Q_2(self.L, self.x, self.u, loss)):
+            while float(self.F(self.x)) > float(self.Q_2(self.L, self.x, self.u, loss)) \
+                and self.L < self.Lmax :
+                    
                 self.L *= self.eta
-                print(self.L)
                 self.x = self.prox(self.L, self.u) 
-                
+            
+            #save current L
+            self.stepsizes.append(self.L)
+            
             #update t, compute next image and save it in x0
             self.t = (1 + torch.sqrt(1 + 4 * self.t0**2))/2
             self.u.data = self.x * (1 + (self.t0 - 1) / self.t) \
@@ -207,7 +215,7 @@ def train(G, D, Y,
     for epoch in tqdm(range(params['n_epochs']), desc="Learning...") :
         
         #plot x each 50 epochs : 
-        if epoch % 1 == 0 :
+        if epoch % 50 == 0 :
             x.append(G.x.detach().clone())
             b.append(G.bg.b.detach().clone())
             
@@ -258,7 +266,7 @@ def train(G, D, Y,
             
             #sample a batch of simulated images 
             ysim = G(batch_size)
-            
+
             #compute l2 fidelity term and its gradient
             G.compute_grad_2(g_l2_func, ysim, [G.x, G.bg.b])
             

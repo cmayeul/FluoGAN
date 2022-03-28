@@ -33,7 +33,7 @@ class Generator(nn.Module):
         #initialisation of x and b
         if x0 is None : 
             h,w = out_shape
-            x0 = torch.ones((h*undersampling + 2*(kwidth //2), w*undersampling + 2*(kwidth//2)))
+            x0 = torch.zeros((h*undersampling, w*undersampling))
             
         if b0 is None :
             b0 = torch.zeros(out_shape, device=x0.device, dtype=x0.dtype)
@@ -42,7 +42,7 @@ class Generator(nn.Module):
         self.alpha = alpha
         
         #The layers for simulator
-        self.conv = FFTConv2dConstKernel(kwidth, ksigma, undersampling, x0.dtype, x0.device) #diffraction
+        self.conv = Conv2dConstKernel(kwidth, ksigma, undersampling, x0.dtype, x0.device) #diffraction
         self.relu = nn.ReLU() 
         self.bg = Background(b0) #out of focus emitters
         self.poisson = PoissonProcess(alpha) #emission
@@ -60,18 +60,18 @@ class Generator(nn.Module):
         """
         phi = self.x.view(1,1,*self.x.shape)
         phi = self.conv(phi)
-        phi = self.relu(phi)
+        #phi = self.relu(phi)
         phi = self.bg(phi)
-        phi = self.relu(phi)
+        #phi = self.relu(phi)
         self.phi = phi
         
-    def to(self, *args, **kargs) : 
-        """ 
-        rewrite the general "to" method to update phi computation
-        """
-        res = super().to(*args,**kargs)
-        self.compute_phi()
-        return res
+    # def to(self, *args, **kargs) : 
+    #     """ 
+    #     rewrite the general "to" method to update phi computation
+    #     """
+    #     res = super().to(*args,**kargs)
+    #     self.compute_phi()
+    #     return res
         
     def update_x(self,x) :
         self.x.data = x
@@ -292,7 +292,7 @@ class Conv2dConstKernel(nn.Module):
         y : tensor of same shape like x
         """
         return self.conv(x, self.kernel, \
-                        padding=(0,0), \
+                        padding=(self.kwidth//2, self.kwidth//2), \
                         stride=self.undersampling)
             
 

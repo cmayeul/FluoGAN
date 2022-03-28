@@ -178,14 +178,15 @@ def main(args, parsed_args, parser) :
     print(f"loaded {len(data)} images from {params['input']} with shape {tuple(data.shape[-2:])} to device {device}")
     print(f"output directory : {params['output']}")
     
-    #initialize generator
+    #initialize generator (x and b initizalized to 0 )
     G = Generator(data.shape[2:],
                  kwidth         = params["kwidth"], 
                  ksigma         = params["ksigma"], 
                  undersampling  = params["undersampling"], 
                  alpha          = params["alpha"], 
-                 esigma         = params["esigma"]
+                 esigma         = params["esigma"], 
                  ).to(device)
+    G.compute_phi()
 
     #init discriminator (critic)
     ysim = G(1)
@@ -236,7 +237,8 @@ def main(args, parsed_args, parser) :
                                     1 / params['g_x_lr'],
                                     f, g,
                                     params['g_x_eta'] ,
-                                    prox=prox_x)
+                                    prox=prox_x, 
+                                    Lmax = 1 / params['g_x_min_lr'])
     #g_x_optimizer = ISTA_Optimizer([G.x], [params['g_x_l1']], [params['g_x_lr']])
     g_b_optimizer = ISTA_Optimizer([G.bg.b],  [0], [params['g_b_lr']])
     
@@ -270,6 +272,13 @@ def main(args, parsed_args, parser) :
         plt.hist([float(x) for x in D(Y).flatten()], histtype="step")
         plt.savefig(out / "hist.png");plt.show()
     
+    #plot stepsizes (for adaptative learning rate backtracking algo)
+    if params['plot_results'] :
+        plt.step(torch.arange(params['n_epochs'] * params['n_generator']),
+                  g_x_optimizer.stepsizes)
+        plt.title("adaptative Lipschitz constant L (inverse of learning rate)")
+        plt.xlabel("number of backtracking steps")
+        plt.savefig(out / "stepsizes.png"); plt.show()
     
     #plot learning curves
     if params["save_losses"] : 
@@ -278,6 +287,7 @@ def main(args, parsed_args, parser) :
             plt.plot(g_iter, torch.tensor(v).log10(), label=k)
         plt.legend();plt.title("g_loss")
         plt.savefig(out / "g_loss.png");plt.show()
+        
         
     if params["save_losses"] and params["n_epochs"] * params["n_generator"] > 50 :
         for k,v in g_losses.items() : 
@@ -333,9 +343,9 @@ if __name__ == "__main__" :
 
     
     #model for the generator
-    parser.add_argument("-a", "--alpha", type=int, default=20, 
+    parser.add_argument("-a", "--alpha", type=int, default=12, 
                         help="average number of photons per emitter")
-    parser.add_argument("-w", "--kwidth", type=int, default=81, 
+    parser.add_argument("-w", "--kwidth", type=int, default=61, 
                         help="width of the convolution kernel")
     parser.add_argument("-s", "--ksigma", type=float, default=8.,
                         help="width of the gaussian in conv kernel")
@@ -364,7 +374,7 @@ if __name__ == "__main__" :
                         help="weight for discriminator distance")
     parser.add_argument("-g_l2", type=float, default=1e-4,
                         help="weight for L2 distance")
-    parser.add_argument("-g_x_l1", type=float, default=1e-2,
+    parser.add_argument("-g_x_l1", type=float, default=1e-3,
                         help="param for L1 reg on x")
     parser.add_argument("-g_b_grad", type=float, default=1.,
                         help="param for smooth reg on b")
@@ -385,8 +395,10 @@ if __name__ == "__main__" :
     #learning rates
     parser.add_argument("-d_lr", type=float, default=1e-5,
                         help="learning rate for the discriminator update")
-    parser.add_argument("-g_x_lr", type=float, default=.25,
+    parser.add_argument("-g_x_lr", type=float, default=1.,
                         help="learning rate for x (inverse of lipschitz constant L)")
+    parser.add_argument("-g_x_min_lr", type=float, default=1e-5,
+                        help="min learning rate for x (inverse of lipschitz constant L)")
     parser.add_argument("-g_b_lr", type=int, default=.001,
                         help="learning rate for b")
     parser.add_argument("-g_x_eta", type=float, default=2.,
@@ -403,4 +415,4 @@ if __name__ == "__main__" :
                         help="plot and save x and b as plt with their scale")
 
     #main(sys.argv[1:], parser.parse_args(), parser)
-    main(["test"], parser.parse_args(["test"]), parser)
+    main(["../donnees_ostreopsis/Export-TempFluc.tif", "-x", "200", "200", "250", "250", "-o", "test", "-n_e", "100", "-r", "-l"], parser.parse_args(["../donnees_ostreopsis/Export-TempFluc.tif", "-x", "200", "200", "250", "250", "-o", "test", "-n_e", "100", "-r", "-l"]), parser)

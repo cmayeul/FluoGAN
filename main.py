@@ -276,8 +276,9 @@ def main(args, parsed_args, parser) :
     if params['plot_results'] :
         plt.step(torch.arange(params['n_epochs'] * params['n_generator']),
                   g_x_optimizer.stepsizes)
-        plt.title("adaptative Lipschitz constant L (inverse of learning rate)")
-        plt.xlabel("number of backtracking steps")
+        plt.title("evolution of the adaptative Lipschitz constant")
+        plt.ylabel("L (inverse of learning rate)")
+        plt.xlabel("epochs")
         plt.savefig(out / "stepsizes.png"); plt.show()
     
     #plot learning curves

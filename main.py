@@ -6,7 +6,6 @@ import sys
 import read_lif
 import json
 import torch
-import numpy as np
 import matplotlib.pyplot as plt
 
 from tifffile import imread
@@ -16,7 +15,7 @@ from matplotlib.image import imsave
 
 from Generator import Generator
 from Discriminator import Discriminator
-from train import train, MultipleOptimizer, ISTA_Optimizer, prox_l1, FISTA_Optimizer
+from train import train, ISTA_Optimizer, prox_l1, FISTA_Optimizer
 
 torch.cuda.empty_cache()
 
@@ -186,7 +185,6 @@ def main(args, parsed_args, parser) :
                  alpha          = params["alpha"], 
                  esigma         = params["esigma"], 
                  ).to(device)
-    G.compute_phi()
 
     #init discriminator (critic)
     ysim = G(1)
@@ -194,7 +192,8 @@ def main(args, parsed_args, parser) :
                   c           = params["c"], 
                   n_conv      = params["n_conv"],
                   conv_k_size = params["conv_k_size"], 
-                  max_pool_k_size = params["max_pool_k_size"]
+                  max_pool_k_size = params["max_pool_k_size"],
+                  margin      = params["kwidth"] // (2 * params["undersampling"])
                   ).to(device)
 
     #init learning set 
@@ -386,7 +385,7 @@ if __name__ == "__main__" :
                         help="number of discriminator update during 1 epoch")
     parser.add_argument("-n_g", "--n_generator", type=int, default=1,
                         help="number of generator update during 1 epoch")
-    parser.add_argument("-n_e", "--n_epochs", type=int, default=1000,
+    parser.add_argument("-n_e", "--n_epochs", type=int, default=2000,
                         help="number of epochs")
     parser.add_argument("-B", "--batch_size", type=int, default=32,
                         help="batch size for D and G training")
@@ -398,9 +397,9 @@ if __name__ == "__main__" :
                         help="learning rate for the discriminator update")
     parser.add_argument("-g_x_lr", type=float, default=1.,
                         help="learning rate for x (inverse of lipschitz constant L)")
-    parser.add_argument("-g_x_min_lr", type=float, default=1e-5,
+    parser.add_argument("-g_x_min_lr", type=float, default=1e-6,
                         help="min learning rate for x (inverse of lipschitz constant L)")
-    parser.add_argument("-g_b_lr", type=int, default=.001,
+    parser.add_argument("-g_b_lr", type=float, default=.001,
                         help="learning rate for b")
     parser.add_argument("-g_x_eta", type=float, default=2.,
                         help="eta param to increase Lipschitz constant during FISTA step")
@@ -416,4 +415,4 @@ if __name__ == "__main__" :
                         help="plot and save x and b as plt with their scale")
 
     main(sys.argv[1:], parser.parse_args(), parser)
-    #main(["../donnees_ostreopsis/Export-TempFluc.tif", "-x", "200", "200", "250", "250", "-o", "test", "-n_e", "100", "-r", "-l"], parser.parse_args(["../donnees_ostreopsis/Export-TempFluc.tif", "-x", "200", "200", "250", "250", "-o", "test", "-n_e", "100", "-r", "-l"]), parser)
+    #main(["test_alter"], parser.parse_args(["test_alter"]), parser)

@@ -6,9 +6,15 @@
 
 ## Examples
 
-To compute a super-resolution image from a tif file, with 500 epochs, taking only the 500 first images from the tif file, croping them to extract a 50 × 50 region, saving the parameters and the outputs in test directory, ploting results and learning curves :
+To compute a super-resolution image from a tif file, with 1200 epochs, saving the parameters and the outputs in test directory, ploting results and learning curves :
 
-      ./main.py Export-TempFluc.tif -n_e 500 -n_img 500 -x 200 200 250 250 -o test -r -l
+      ./main.py test/test_data.tif -n_e 1200 -o test -r -l
+
+If a parameter json file already exists, then you can directely use it as an input, and eventually overwrite some parameters (here the number of epochs) :
+      ./main.py test/ -n_e 800
+
+The test data is a portion of a "ghost" sample with calibrated filaments. Here the two nearest filaments are separated by 210nm
+
 
 ## References
 

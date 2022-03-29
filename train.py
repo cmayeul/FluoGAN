@@ -113,7 +113,7 @@ class FISTA_Optimizer:
         self.u.data = self.x
         self.t0 = self.t
         
-    def backtracking_step_2(self, loss) : 
+    def backtracking_step(self, loss) : 
             #update x with proximal operator
             self.x = self.prox(self.L, self.u)
             
@@ -134,44 +134,6 @@ class FISTA_Optimizer:
             self.x0 = self.x
             self.t0 = self.t
         
-    def backtracking_step(self, loss) : 
-        #if the new loss is higher than previous one : 
-        #then go back to previous point and decrease step size.
-        if loss > self.loss:
-            self.L *= self.eta
-            print(loss, self.loss, self.L)
-            self.x = self.prox(self.L,self.u0)
-            self.u.data = self.x * (1 + (self.t0 - 1) / self.t) \
-                      - self.x0 * (self.t0 - 1) / self.t
-        
-        else :
-            #save current loss and shift old values
-            self.loss = loss
-            self.t0 = self.t
-            self.x0 = self.x
-            self.u0 = self.u.data.clone()
-            self.u0.grad = self.u.grad.clone()
-            
-            #compute new step x from previous intermediate self.u 
-            self.x = self.prox(self.L, self.u0)
-            
-            #update t, compute new intermediate point u between x0 and x :
-            self.t = (1 + torch.sqrt(1 + 4 * self.t0**2))/2
-            self.u.data = self.x * (1 + (self.t0 - 1) / self.t) \
-                      - self.x0 * (self.t0 - 1) / self.t
-        
- 
-class MultipleOptimizer :
-    """
-    Group many different optimisers in one
-    """
-    def __init__(self, *optimisers):
-        self.optimisers = optimisers
-        
-    def step(self) :
-        for o in self.optimisers :
-            o.step()
-
 
 def train(G, D, Y, 
           g_x_optimizer, g_b_optimizer, d_optimizer,
@@ -288,7 +250,7 @@ def train(G, D, Y,
             g_losses['total'].append(float(g_b_grad +  g_l2 + g_D + g_x_l1))
             
             #update G.x with optimizer
-            g_x_optimizer.backtracking_step_2(g_losses['total'][-1])
+            g_x_optimizer.backtracking_step(g_losses['total'][-1])
             #g_x_optimizer.step()
             g_b_optimizer.step()
             G.compute_phi()

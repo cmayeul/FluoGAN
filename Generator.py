@@ -60,25 +60,25 @@ class Generator(nn.Module):
         """
         phi = self.x.view(1,1,*self.x.shape)
         phi = self.conv(phi)
-        #phi = self.relu(phi)
         phi = self.bg(phi)
         #phi = self.relu(phi)
         self.phi = phi
         
-    # def to(self, *args, **kargs) : 
-    #     """ 
-    #     rewrite the general "to" method to update phi computation
-    #     """
-    #     res = super().to(*args,**kargs)
-    #     self.compute_phi()
-    #     return res
+    def to(self, *args, **kargs) : 
+        """ 
+        rewrite the general "to" method to update phi computation
+        """
+        res = super().to(*args,**kargs)
+        self.compute_phi()
+        return res
         
     def update_x(self,x) :
         self.x.data = x
         self.compute_phi()
         
     def forward(self, frames=10):
-        y = self.phi.repeat(frames,1,1,1)
+        y = self.relu(self.phi)
+        y = y.repeat(frames,1,1,1)
         y = self.poisson(y)
         y = self.noise(y)
         y = self.relu2(y)

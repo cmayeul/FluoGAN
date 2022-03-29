@@ -15,7 +15,8 @@ class Discriminator(nn.Module):
                  n_conv:int = 3, 
                  n_features:int = 10,
                  max_pool_k_size:int = 4, 
-                 conv_k_size:int = 3):
+                 conv_k_size:int = 3, 
+                 margin:int = 0):
         """
         
 
@@ -32,6 +33,8 @@ class Discriminator(nn.Module):
         """
         
         super().__init__()
+        
+        self.margin = margin
         
         self.convs = nn.ModuleDict()
         
@@ -50,6 +53,7 @@ class Discriminator(nn.Module):
         
         # try conv layers on fake data to get output size
         xf = torch.ones((1,1,*input_shape))
+        xf = xf[:,:,margin:-margin, margin:-margin]
         xf = self.conv(xf)
         output_shape = torch.tensor(xf.shape[1:]).prod()
                         
@@ -78,6 +82,8 @@ class Discriminator(nn.Module):
         return x
     
     def forward(self, x):
+        #remove margin : 
+        x = x[:,:,self.margin:-self.margin,self.margin:-self.margin]
         #conv layers
         x = self.conv(x)
         #reshape then fully connected layer

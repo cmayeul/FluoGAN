@@ -1,6 +1,6 @@
 {
   "input": "/home/mayeul/Documents/3A/stage/SRGAN/test/test_data.tif",
-  "output": "/home/mayeul/Documents/3A/stage/SRGAN/test2",
+  "output": "/home/mayeul/Documents/3A/stage/SRGAN/test",
   "params": null,
   "index": 0,
   "n_images": null,
@@ -29,8 +29,8 @@
   "g_x_min_lr": 1e-06,
   "g_b_lr": 0.001,
   "g_x_eta": 2.0,
-  "save_losses": true,
+  "save_losses": false,
   "save_models": false,
   "save_video": false,
-  "plot_results": true
+  "plot_results": false
 }

@@ -16,6 +16,15 @@ If a parameter json file already exists, then you can directely use it as an inp
 
 The test data is a portion of a "ghost" sample with calibrated filaments. Here the two nearest filaments are separated by 300nm
 
+## Installation
+
+Requires python 3 and pytorch >= 1.10 
+
+Install required python modules (Linux) : 
+
+      sudo pip3 install torch, torchvision, matplotlib, tifffile, read_lif, tqdm, json
+      
+See https://pytorch.org to install PyTorch on different platforms
 
 ## References
 

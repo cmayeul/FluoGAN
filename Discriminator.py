@@ -16,7 +16,7 @@ class Discriminator(nn.Module):
                  n_features:int = 10,
                  max_pool_k_size:int = 4, 
                  conv_k_size:int = 3, 
-                 margin:int = 0):
+                 margin:int = 1):
         """
         
 

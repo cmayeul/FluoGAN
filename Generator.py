@@ -19,6 +19,7 @@ class Generator(nn.Module):
                  undersampling:int = 4, 
                  alpha:int = 12, 
                  esigma:float = 0.5, 
+                 fft:bool = False,
                  x0:torch.Tensor = None, 
                  b0:torch.Tensor = None) -> None :
         """
@@ -42,7 +43,11 @@ class Generator(nn.Module):
         self.alpha = alpha
         
         #The layers for simulator
-        self.conv = Conv2dConstKernel(kwidth, ksigma, undersampling, x0.dtype, x0.device) #diffraction
+        #diffraction
+        if fft :
+            self.conv = FFTConv2dConstKernel(kwidth, ksigma, undersampling, x0.dtype, x0.device)
+        else : 
+            self.conv = Conv2dConstKernel(kwidth, ksigma, undersampling, x0.dtype, x0.device) #diffraction
         self.relu = nn.ReLU() 
         self.bg = Background(b0) #out of focus emitters
         self.poisson = PoissonProcess(alpha) #emission
@@ -61,7 +66,6 @@ class Generator(nn.Module):
         phi = self.x.view(1,1,*self.x.shape)
         phi = self.conv(phi)
         phi = self.bg(phi)
-        #phi = self.relu(phi)
         self.phi = phi
         
     def to(self, *args, **kargs) : 
@@ -265,7 +269,7 @@ class Conv2dConstKernel(nn.Module):
         
         #build gaussian kernel
         ax = torch.linspace(-kwidth//2, kwidth//2, kwidth, dtype=dtype, device=device)
-        xx, yy = torch.meshgrid(ax, ax)
+        xx, yy = torch.meshgrid(ax, ax, indexing="ij")
         kernel = torch.exp(- (xx**2 + yy**2) / 2 / ksigma**2)
         kernel /= kernel.sum()
         
@@ -274,7 +278,7 @@ class Conv2dConstKernel(nn.Module):
         
         #convolve it with undersampling matrix of ones
         ones = torch.ones((1,1,undersampling, undersampling), dtype=dtype, device=device)
-        kernel = nn.functional.conv2d(kernel, ones, padding='same')
+        kernel = nn.functional.conv2d(kernel, ones, padding=undersampling//2)
         
         #save it as a constant parameter
         self.kernel = nn.Parameter(kernel, requires_grad=False)

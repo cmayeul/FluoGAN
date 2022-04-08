@@ -9,7 +9,7 @@ import torch
 import matplotlib.pyplot as plt
 
 from tifffile import imread
-from pathlib import Path
+from pathlib import Path, PosixPath, WindowsPath
 from torchvision.io import read_video, write_video, read_image
 from matplotlib.image import imsave
 
@@ -27,7 +27,7 @@ def load_parameters(args, parsed_args, parser) :
     params = {}
     #path to the input data
     data_path = None
-    
+        
     #check if the input exists
     path = Path(parsed_args.input)
     if not path.exists() :
@@ -54,13 +54,23 @@ def load_parameters(args, parsed_args, parser) :
     #each step overwrites the previous one
     for file in params_src : 
         print(f"loading parameters from {file}")
+        
         with open(file,"r") as f : 
-            params.update(json.load(f))
+            p = json.load(f)
+            
+            #change paths into absolute paths
+            for k,v in p.items() :
+                if k in ["input", "output", "parameters", "D", "G"] and v is not None :
+                    p[k] = Path(v)
+                    if not p[k].is_absolute() :
+                        p[k] = file.parent / v
+            
+            params.update(p)
                 
     #choose the right input data path from data_path if not None or from params
     if data_path is None : 
         if "input" in params : 
-            data_path = Path(params["input"])
+            data_path = params["input"]
         else : 
             raise ValueError("no path to input data")
     
@@ -69,11 +79,19 @@ def load_parameters(args, parsed_args, parser) :
     params["input"] = data_path
         
     #save parameters in a json file in output directory 
-    params["output"] = Path(params["output"])
     params["output"].mkdir(exist_ok=True)
     print(f"saving current parameters to {params['output'] / 'parameters.json'}")
+    
+    def save_path(p): 
+        try : 
+            res = p.relative_to(params['output'])
+        except :
+            res = p.resolve()
+        finally :
+            return str(res)
+    
     with open(params['output'] / 'parameters.json', "w") as f : 
-        json.dump(params, f, default=lambda p : str(p.resolve()), indent=2)
+        json.dump(params, f, indent=2, default=save_path)
     
     return params
 
@@ -81,7 +99,7 @@ def load_data(params, device) :
     if params["input"] is None  :
         raise ValueError("No input")
     elif not Path(params["input"]).is_file() :
-        raise ValueError("Invalid input file : {params['input']}")
+        raise ValueError(f"Invalid input file : {params['input']}")
         
     extension = params["input"].suffix[1:]
 
@@ -97,7 +115,8 @@ def load_data(params, device) :
         
     elif extension in ["png", "jpeg", "JPG", "JPEG"] :
         #in case the input is an image, then generate a synthetic dataset
-        data = gen_synthetic_data(params["input"])
+        xreal = read_image(str(params["input"]))[params['index'],...].to(device)
+        data = gen_synthetic_data(xreal, params, device)
         
     else :
         data = read_video(str(params["input"]))[0][..., params["index"]]
@@ -130,13 +149,13 @@ def init_device(params) :
     return device
 
 
-def gen_synthetic_data(gt, params, device) : 
+def gen_synthetic_data(xreal, params, device) : 
     """
     Generate a synthetic learning dataset from a ground truth image
 
     Parameters
     ----------
-    gt : numpy.ndarray(shape=(h,w,c))
+    xreal : numpy.ndarray(shape=(h,w))
         input image.
 
     Returns
@@ -144,15 +163,22 @@ def gen_synthetic_data(gt, params, device) :
     Y : torch.tensor(shape=(n,h,w)).
         the output dataset with n images
     """
-    #load image
-    xreal = read_image(gt)[1,...].to(device)
-    #normalize the image 
-    xreal //= 10
+    #save ground truth image : 
+    if params["plot_results"] : 
+        plt.imshow(xreal.detach().cpu())
+        plt.colorbar()
+        plt.title("xreal")
+        plt.savefig(params["output"] / "xreal.png");plt.show()
+    
     #compute shape of output image 
     out_shape = (xreal.shape[0] // params["undersampling"], xreal.shape[1] // params["undersampling"])
     #resize yreal to length and width multiples of stride (to avoid rounding problems)
     xreal = xreal[:params["undersampling"] * out_shape[0], 
                   :params["undersampling"] * out_shape[1]]
+    #translate xreal values from 0 to 10
+    xreal -= xreal.min()
+    xreal = xreal.to(float) / 10
+    
     #simulate real data
     b0 = torch.zeros(*out_shape, device=device).float() #uniform backgroud
     #"real data" generator and values
@@ -162,10 +188,19 @@ def gen_synthetic_data(gt, params, device) :
                    params["undersampling"],
                    params["alpha"],
                    params["esigma"],
+                   params["fft"],
                    x0=xreal.float(),
                    b0=b0).to(device)
-    Y = G0(params["n_img"])
-    return Y
+    
+    #check if n_img is not None (mandatory in case of dataset generation)
+    if params["n_images"] is None : 
+        raise ValueError("A non null n_images parameter is mandatory for training set generation")
+    
+    #generate fake training set
+    Y = G0(params["n_images"])
+    print(f"fake training set generated from ground truth {params['input']}")
+    
+    return Y[:,0,:,:]
 
 def main(args, parsed_args, parser) :
     params = load_parameters(args, parsed_args, parser)
@@ -177,24 +212,37 @@ def main(args, parsed_args, parser) :
     print(f"loaded {len(data)} images from {params['input']} with shape {tuple(data.shape[-2:])} to device {device}")
     print(f"output directory : {params['output']}")
     
-    #initialize generator (x and b initizalized to 0 )
-    G = Generator(data.shape[2:],
-                 kwidth         = params["kwidth"], 
-                 ksigma         = params["ksigma"], 
-                 undersampling  = params["undersampling"], 
-                 alpha          = params["alpha"], 
-                 esigma         = params["esigma"], 
-                 ).to(device)
+    #initialize generator (x and b initizalized to 0 or from provided archive)
+    if params['G'] is not None : 
+        G = torch.load(params['G']).to(device)
+    else :
+        G = Generator(data.shape[2:],
+                     kwidth         = params["kwidth"], 
+                     ksigma         = params["ksigma"], 
+                     undersampling  = params["undersampling"], 
+                     alpha          = params["alpha"], 
+                     esigma         = params["esigma"], 
+                     fft            = params["fft"],
+                     ).to(device)
 
-    #init discriminator (critic)
-    ysim = G(1)
-    D = Discriminator(ysim.shape[2:],
-                  c           = params["c"], 
-                  n_conv      = params["n_conv"],
-                  conv_k_size = params["conv_k_size"], 
-                  max_pool_k_size = params["max_pool_k_size"],
-                  margin      = params["kwidth"] // (2 * params["undersampling"])
-                  ).to(device)
+    #print PSF
+    if params['plot_results'] : 
+        plt.imshow(G.conv.kernel[0,0].detach().cpu())
+        plt.title(f"Gaussian PSF, ksigma = {params['ksigma']} px")
+        plt.savefig(out / "PSF.png");plt.show()
+
+    #init discriminator (critic) or load it from archive
+    if params['D'] is not None :
+        D = torch.load(params['D']).to(device)
+    else:
+        ysim = G(1)
+        D = Discriminator(ysim.shape[2:],
+                      c           = params["c"], 
+                      n_conv      = params["n_conv"],
+                      conv_k_size = params["conv_k_size"], 
+                      max_pool_k_size = params["max_pool_k_size"],
+                      margin      = 1 #params["kwidth"] // (2 * params["undersampling"])
+                      ).to(device)
 
     #init learning set 
     Y = data.view(data.shape[0], 1, data.shape[-2], data.shape[-1])
@@ -204,10 +252,10 @@ def main(args, parsed_args, parser) :
         
     #def the l2 fidelity term
     Ymean = Y.float().mean(axis=0)
-    g_l2_func = lambda y : params['g_l2'] * ((y-Ymean)**2).sum()
+    g_l2_func = lambda y : params['g_l2'] * ((y-Ymean)**2).mean()
     
     #def the discriminator fidelity term
-    g_D_func = lambda y : params['g_D'] * (1 - D(y)).mean() * G.x.shape[0] * G.x.shape[1]
+    g_D_func = lambda y : params['g_D'] * (1 - D(y)).mean() #* G.x.shape[0] * G.x.shape[1]
     
     #complete fidelity term (need a second generator to avoid collision with G)
     G2 = Generator(data.shape[2:],
@@ -228,17 +276,17 @@ def main(args, parsed_args, parser) :
     
     #and L1 regularization
     def g(x):
-        return x.abs().sum()
+        return x.abs().mean()
     
     #init FISTA generator optimizer
     prox_x = prox_l1(params['g_x_l1'])
     g_x_optimizer = FISTA_Optimizer(G.x,
                                     1 / params['g_x_lr'],
                                     f, g,
-                                    params['g_x_eta'] ,
+                                    1 / params['g_x_eta'] ,
                                     prox=prox_x, 
-                                    Lmax = 1 / params['g_x_min_lr'])
-    #g_x_optimizer = ISTA_Optimizer([G.x], [params['g_x_l1']], [params['g_x_lr']])
+                                    backtrackingmax=params['g_x_backtrackingmax'])
+    # g_x_optimizer = ISTA_Optimizer([G.x], [params['g_x_l1']], [params['g_x_lr']])
     g_b_optimizer = ISTA_Optimizer([G.bg.b],  [0], [params['g_b_lr']])
     
     # start training
@@ -255,28 +303,37 @@ def main(args, parsed_args, parser) :
     
     #plot ysim, yreal and final x
     if params["plot_results"] :
-        plt.imshow(G(1)[0,0].detach().cpu());plt.colorbar();plt.title("ysim")
+        ysim = G(1)[0,0].detach().cpu()
+        yreal = Y[0,0].detach().cpu()
+        ymax = max(ysim.max(), yreal.max())
+        plt.imshow(ysim, vmax=ymax, vmin=0);plt.colorbar();plt.title("ysim")
         plt.savefig(out / "ysim.png");plt.show()
-        plt.imshow(Y[0,0].detach().cpu());plt.colorbar();plt.title("yreal") 
+        plt.imshow(yreal, vmax=ymax, vmin=0);plt.colorbar();plt.title("yreal") 
         plt.savefig(out / "yreal.png");plt.show()
-        plt.imshow(G.x.detach().cpu());plt.colorbar();plt.title("x") 
+        xmax = max(G.x.detach().max().cpu(), G.bg.b.detach().max().cpu())
+        plt.imshow(G.x.detach().cpu(), vmax=xmax, vmin=0);plt.colorbar();plt.title("x") 
         plt.savefig(out / "x.png");plt.show()
-        plt.imshow(G.bg.b.detach().cpu());plt.colorbar();plt.title("b") 
+        plt.imshow(G.bg.b.detach().cpu(), vmax=xmax, vmin=0);plt.colorbar();plt.title("b") 
         plt.savefig(out / "b.png");plt.show()
         imsave(out / "x-img.png", G.x.detach().cpu())
         imsave(out / "b-img.png", G.bg.b.detach().cpu())
         imsave(out / "x-img-bw.png", G.x.detach().cpu(), cmap="binary")
         imsave(out / "b-img-bw.png", G.bg.b.detach().cpu(), cmap="binary")
-        plt.hist([float(x) for x in D(G(len(Y))).flatten()], histtype="step")
-        plt.hist([float(x) for x in D(Y).flatten()], histtype="step")
+        imsave(out / "x-img-wb.png", G.x.detach().cpu(), cmap="gray")
+        imsave(out / "b-img-wb.png", G.bg.b.detach().cpu(), cmap="gray")
+        plt.hist([float(x) for x in D(G(len(Y))).flatten()], histtype="step", label="real images")
+        plt.hist([float(x) for x in D(Y).flatten()], histtype="step", label="simulated images")
+        plt.title("estimated distribution of discriminator ouputs")
+        plt.legend()
         plt.savefig(out / "hist.png");plt.show()
     
     #plot stepsizes (for adaptative learning rate backtracking algo)
     if params['plot_results'] :
         plt.step(torch.arange(params['n_epochs'] * params['n_generator']),
                   g_x_optimizer.stepsizes)
-        plt.title("evolution of the adaptative Lipschitz constant")
-        plt.ylabel("L (inverse of learning rate)")
+        plt.yscale("log")
+        plt.title("evolution of the adaptative FISTA learning rate")
+        plt.ylabel("learning rate")
         plt.xlabel("epochs")
         plt.savefig(out / "stepsizes.png"); plt.show()
     
@@ -284,21 +341,24 @@ def main(args, parsed_args, parser) :
     if params["save_losses"] : 
         g_iter = torch.arange(len(g_losses['total']))
         for k,v in g_losses.items() : 
-            plt.plot(g_iter, torch.tensor(v).log10(), label=k)
-        plt.legend();plt.title("g_loss")
-        plt.savefig(out / "g_loss.png");plt.show()
+            plt.plot(g_iter, v, label=k)
+        plt.legend();plt.title("generator loss")
+        plt.yscale("log")
+        plt.savefig(out / "g_loss_log.png");plt.show()
         
         
     if params["save_losses"] and params["n_epochs"] * params["n_generator"] > 50 :
         for k,v in g_losses.items() : 
             plt.plot(g_iter[50:], torch.tensor(v)[50:], label=k)
-        plt.legend();plt.title("g_loss")
-        plt.savefig(out / "g_loss_2.png");plt.show()
+        plt.legend();plt.title("generator loss (excepted steps from 0 to 50)")
+        plt.xlabel("optimization steps (=n_generator * epochs)")
+        plt.savefig(out / "g_loss.png");plt.show()
     
     d_iter = torch.arange(len(d_losses['total']))
     for k,v in d_losses.items() : 
-        plt.plot(d_iter, torch.tensor(v).log10(), label=k)
-    plt.legend();plt.title("d_loss")
+        plt.plot(d_iter, v, label=k)
+    plt.legend();plt.title("discriminator loss")
+    plt.xlabel("optimization steps (=n_discriminator * epochs)")
     plt.savefig(out / "d_loss.png");plt.show()
  
         
@@ -316,7 +376,7 @@ if __name__ == "__main__" :
     parser = argparse.ArgumentParser()
     
     #input file : video or lif or tif image
-    parser.add_argument("input", type=str,
+    parser.add_argument("input", type=Path, default=Path("./"),
                         help="main input, may be : \
                             1. a video or lif file or tiff image serie \
                             2. a json parameter file containing path to input data \
@@ -325,12 +385,23 @@ if __name__ == "__main__" :
                             Remark 2 : this software creates or overwrite the output directory \
                                 to save parameters and results (default : current directory)")
     
-    parser.add_argument("-o", "--output", type=str, default="./", 
+    parser.add_argument("-o", "--output", type=Path, default=Path("./"), 
                         help="output directory, default : ./")
-    parser.add_argument("-p", "--params", type=str, default=None,
+    parser.add_argument("-p", "--params", type=Path, default=None,
                         help="load parameters from a json file \
                         parameters are loaded in this order : \
                         1. CLI, 2. JSON file, 3. default")
+    parser.add_argument("-G", "--G", type=Path, default=None, 
+                        help="path to a pytorch archive containing a generator module, \
+                        useful to restart training without restarting from zero. \
+                        Remark : in this case parameters like alpha, ksigma or \
+                        kwidth have no effect. \
+                        Default generator is initialized with constant b and x equals to zero")
+    parser.add_argument("-D", "--D", type=Path, default=None, 
+                        help="path to a pytorch archive containing a discriminator module, \
+                        useful to restart training without restarting from zero. \
+                        Default discriminator is initialized with random values \
+                        and its shape depends on the input data.")
     
     parser.add_argument("-i", "--index", type=int, default=0,
                         help="in case of lif input give the serie index \
@@ -391,18 +462,20 @@ if __name__ == "__main__" :
                         help="batch size for D and G training")
     parser.add_argument("-C", "--cpu", action="store_true",
                         help="use CPU instead of GPU")
+    parser.add_argument("-F", "--fft", action="store_true",
+                        help="use FFT to compute convolution with the PSF")
     
     #learning rates
     parser.add_argument("-d_lr", type=float, default=1e-5,
                         help="learning rate for the discriminator update")
     parser.add_argument("-g_x_lr", type=float, default=1.,
                         help="learning rate for x (inverse of lipschitz constant L)")
-    parser.add_argument("-g_x_min_lr", type=float, default=1e-6,
-                        help="min learning rate for x (inverse of lipschitz constant L)")
+    parser.add_argument("-g_x_backtrackingmax", type=int, default=10,
+                        help="max number of backtracking steps per FISTA iteration")
     parser.add_argument("-g_b_lr", type=float, default=.001,
                         help="learning rate for b")
-    parser.add_argument("-g_x_eta", type=float, default=2.,
-                        help="eta param to increase Lipschitz constant during FISTA step")
+    parser.add_argument("-g_x_eta", type=float, default=.98,
+                        help="factor to reduce g_x_lr during FISTA backtracking iterations")
     
     #visualization parameters
     parser.add_argument("-l", "--save_losses", action="store_true",
@@ -415,4 +488,4 @@ if __name__ == "__main__" :
                         help="plot and save x and b as plt with their scale")
 
     main(sys.argv[1:], parser.parse_args(), parser)
-    #main(["test_alter"], parser.parse_args(["test_alter"]), parser)
+    #main(["test_7_big"], parser.parse_args(["test_7_big"]), parser)

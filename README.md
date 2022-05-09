@@ -22,7 +22,7 @@ Requires python 3 and pytorch >= 1.10
 
 Install required python modules (Linux) : 
 
-      sudo pip3 install torch, torchvision, matplotlib, tifffile, read_lif, tqdm, json
+      sudo pip3 install torch torchvision matplotlib tifffile read_lif tqdm czifile
       
 See https://pytorch.org to install PyTorch on different platforms
 

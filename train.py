@@ -173,6 +173,8 @@ def train(G, D, Y,
     x = []
     b = []
     
+    total = []
+    
     rep = Path(rep)
     batch_size = params['batch_size']
             
@@ -186,6 +188,8 @@ def train(G, D, Y,
             
             if epoch > 0 : imsave(rep / f"x{epoch}-img.png", G.x.detach().cpu())
 
+        # if epoch % 100 == 0 :
+        #     g_x_optimizer.L *= 2
         
         #train D for n_critic steps
         for ii in range(params['n_discriminator']) : 
@@ -233,10 +237,10 @@ def train(G, D, Y,
             ysim = G(batch_size)
 
             #compute l2 fidelity term and its gradient
-            G.compute_grad_2(g_l2_func, ysim, [G.x, G.bg.b])
+            G.compute_grad_2(g_l2_func, ysim, [G.x, G.bg.b, G.bg.bmin])
             
             #compute gradient of expectation of the distance wrt x
-            G.compute_grad_2(g_D_func, ysim, [G.x, G.bg.b])
+            G.compute_grad_2(g_D_func, ysim, [G.x, G.bg.b, G.bg.bmin])
 
             #compute explicit loss to plot them and for FISTA next step update
             g_x_l1   = params['g_x_l1']   *  G.x.abs().mean()
@@ -252,6 +256,9 @@ def train(G, D, Y,
             g_losses['g_D'].append(float(g_D))
             g_losses['total'].append(float(g_b_grad +  g_l2 + g_D + g_x_l1))
             
+            #save sum of the signal 
+            total.append(float(G.x.sum()))
+            
             #update G.x with optimizer
             g_x_optimizer.backtracking_step(g_losses['total'][-1])
             # g_x_optimizer.step()
@@ -259,4 +266,4 @@ def train(G, D, Y,
             G.compute_phi()
                 
                 
-    return g_losses, d_losses, x, b
+    return g_losses, d_losses, x, b, total

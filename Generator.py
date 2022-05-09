@@ -175,6 +175,7 @@ class Background(nn.Module):
         super().__init__()
         
         self.b = nn.Parameter(b0, requires_grad=True)
+        self.bmin = nn.Parameter(torch.zeros(1,), requires_grad=True)
         
         #def laplacian filter 
         laplacian = torch.tensor([[[[ 0,-1, 0],
@@ -196,9 +197,11 @@ class Background(nn.Module):
         self.sy = nn.Parameter(sy, requires_grad=False)
         
         self.pad = nn.ReplicationPad2d(1)
+        self.pad_bottom = nn.ReplicationPad2d((0,0,0,1))
+        self.pad_right = nn.ReplicationPad2d((0,1,0,0))
         
     def forward(self,x):
-        return x + self.b.expand(1,1,-1,-1)
+        return x + self.b.expand(1,1,-1,-1) + self.bmin.expand(x.shape)
     
     def spatial_grad_norm_derivative(self):
         b = self.b.detach()
@@ -214,8 +217,8 @@ class Background(nn.Module):
         """
         b = self.b.expand(1,1,-1,-1)
         
-        gx = nn.functional.conv2d(b, self.sx, padding='same')
-        gy = nn.functional.conv2d(b, self.sy, padding='same')
+        gx = nn.functional.conv2d(self.pad_right(b), self.sx)
+        gy = nn.functional.conv2d(self.pad_bottom(b), self.sy)
         
         return gx**2 + gy**2
 

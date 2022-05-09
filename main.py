@@ -3,12 +3,12 @@
 
 import argparse
 import sys
-import read_lif
 import json
 import torch
 import matplotlib.pyplot as plt
+from matplotlib.colors import SymLogNorm, Normalize, PowerNorm
+import numpy as np
 
-from tifffile import imread
 from pathlib import Path, PosixPath, WindowsPath
 from torchvision.io import read_video, write_video, read_image
 from matplotlib.image import imsave
@@ -77,6 +77,18 @@ def load_parameters(args, parsed_args, parser) :
     #load CLI arguments 
     params = parser.parse_args(args, argparse.Namespace(**params)).__dict__
     params["input"] = data_path
+    
+    #compute PSF width from provided parameters
+    if params["ksigma"] is None :
+        if params["px"] is None :
+            raise ValueError("You should provide at least ksigma or \
+                             px / FWHM or px / NA / wavelength to modelize PSF")
+        elif params["FWHM"] is None :
+            if params["wavelength"] is None or params["NA"] is None :
+                raise ValueError("You should provide at least ksigma or \
+                                 px / FWHM or px / NA / wavelength to modelize PSF")
+            params["FWHM"] = int(0.61 * params["wavelength"] / params["NA"])
+        params["ksigma"] = params["FWHM"] / 2.335 / params["px"] * params["undersampling"]
         
     #save parameters in a json file in output directory 
     params["output"].mkdir(exist_ok=True)
@@ -104,14 +116,21 @@ def load_data(params, device) :
     extension = params["input"].suffix[1:]
 
     if extension == "lif" : 
-        reader = read_lif.Reader(params["input"])
+        from read_lif import Reader as lifReader
+        reader = lifReader(params["input"])
         series = reader.getSeries()
         data = torch.stack([torch.from_numpy(img) \
                             for t,img in series[params["index"]].enumByFrame()])
       
     elif extension == "tif" : 
-        data = imread(params["input"])
-        data = torch.from_numpy(data)
+        from tifffile import tifread
+        data = tifread(params["input"])
+        data = torch.from_numpy(np.float_(data))
+        
+    elif extension == "czi" :
+        from czifile import imread as cziread
+        data = cziread(params['input'])
+        data = torch.from_numpy(np.float_(data[0,:,0,:,:,params['index']]))
         
     elif extension in ["png", "jpeg", "JPG", "JPEG"] :
         #in case the input is an image, then generate a synthetic dataset
@@ -166,7 +185,7 @@ def gen_synthetic_data(xreal, params, device) :
     #save ground truth image : 
     if params["plot_results"] : 
         plt.imshow(xreal.detach().cpu())
-        plt.colorbar()
+        plt.colorbar(orientation = 'horizontal' if xreal.shape[0] < xreal.shape[1] else 'vertical')
         plt.title("xreal")
         plt.savefig(params["output"] / "xreal.png");plt.show()
     
@@ -287,10 +306,15 @@ def main(args, parsed_args, parser) :
                                     prox=prox_x, 
                                     backtrackingmax=params['g_x_backtrackingmax'])
     # g_x_optimizer = ISTA_Optimizer([G.x], [params['g_x_l1']], [params['g_x_lr']])
-    g_b_optimizer = ISTA_Optimizer([G.bg.b],  [0], [params['g_b_lr']])
+    g_b_optimizer = ISTA_Optimizer([G.bg.b, G.bg.bmin],  [0,0], 
+                                   [params['g_b_lr'], params['g_bmin_lr']])
+    
+    #normalize Y background :
+    Ymin = Y.mean(axis=0).min()
+    Y = (Y - Ymin).abs()
     
     # start training
-    g_losses, d_losses, x, b  =  train(G, D, Y, 
+    g_losses, d_losses, x, b, total  =  train(G, D, Y, 
                                         g_x_optimizer, g_b_optimizer, d_optimizer,
                                         params, out,
                                         g_l2_func, g_D_func)
@@ -306,14 +330,22 @@ def main(args, parsed_args, parser) :
         ysim = G(1)[0,0].detach().cpu()
         yreal = Y[0,0].detach().cpu()
         ymax = max(ysim.max(), yreal.max())
-        plt.imshow(ysim, vmax=ymax, vmin=0);plt.colorbar();plt.title("ysim")
+        o = 'vertical' if yreal.shape[0] > yreal.shape[1] else 'horizontal'
+        plt.imshow(ysim, vmax=ymax, vmin=0);plt.colorbar(orientation=o);plt.title("ysim")
         plt.savefig(out / "ysim.png");plt.show()
-        plt.imshow(yreal, vmax=ymax, vmin=0);plt.colorbar();plt.title("yreal") 
+        plt.imshow(yreal, vmax=ymax, vmin=0);plt.colorbar(orientation=o);plt.title("yreal") 
         plt.savefig(out / "yreal.png");plt.show()
-        xmax = max(G.x.detach().max().cpu(), G.bg.b.detach().max().cpu())
-        plt.imshow(G.x.detach().cpu(), vmax=xmax, vmin=0);plt.colorbar();plt.title("x") 
+        #mg = params['kwidth'] // 2
+        xmax = max(G.x.detach().max().cpu(), 
+                   G.bg.b.detach().max().cpu())
+        #norm = SymLogNorm(vmin=0, vmax=xmax, linthresh=0.01)
+        #norm = Normalize(vmin=0, vmax=xmax, clip=True)
+        norm_x = PowerNorm(vmin=0, vmax=xmax, gamma=.5)
+        norm_b = PowerNorm(vmin=G.bg.bmin.cpu().detach(), 
+                           vmax=xmax+G.bg.bmin.cpu().detach(), gamma=.5)
+        plt.imshow(G.x.detach().cpu(), norm=norm_x);plt.colorbar(orientation=o);plt.title("x") 
         plt.savefig(out / "x.png");plt.show()
-        plt.imshow(G.bg.b.detach().cpu(), vmax=xmax, vmin=0);plt.colorbar();plt.title("b") 
+        plt.imshow(G.bg.b.detach().cpu() + G.bg.bmin.cpu().detach(), norm=norm_b);plt.colorbar(orientation=o);plt.title("b") 
         plt.savefig(out / "b.png");plt.show()
         imsave(out / "x-img.png", G.x.detach().cpu())
         imsave(out / "b-img.png", G.bg.b.detach().cpu())
@@ -321,11 +353,6 @@ def main(args, parsed_args, parser) :
         imsave(out / "b-img-bw.png", G.bg.b.detach().cpu(), cmap="binary")
         imsave(out / "x-img-wb.png", G.x.detach().cpu(), cmap="gray")
         imsave(out / "b-img-wb.png", G.bg.b.detach().cpu(), cmap="gray")
-        plt.hist([float(x) for x in D(G(len(Y))).flatten()], histtype="step", label="real images")
-        plt.hist([float(x) for x in D(Y).flatten()], histtype="step", label="simulated images")
-        plt.title("estimated distribution of discriminator ouputs")
-        plt.legend()
-        plt.savefig(out / "hist.png");plt.show()
     
     #plot stepsizes (for adaptative learning rate backtracking algo)
     if params['plot_results'] :
@@ -360,6 +387,22 @@ def main(args, parsed_args, parser) :
     plt.legend();plt.title("discriminator loss")
     plt.xlabel("optimization steps (=n_discriminator * epochs)")
     plt.savefig(out / "d_loss.png");plt.show()
+    
+    #plot sum of the signal 
+    if params['plot_results']:
+        plt.plot(range(len(total)), total)
+        plt.title('sum of x pixel values')
+        plt.xlabel('epoch')
+        plt.ylabel('value')
+        plt.savefig(out / "sum_signal.png"); plt.show()
+    
+    #plot histograms of discriminator outputs 
+    if params['plot_results'] :
+        plt.hist([float(D(G(1))[0,0]) for x in range(len(Y))], histtype="step", label="real images")
+        plt.hist([float(D(y.repeat(1,1,1,1))) for y in Y], histtype="step", label="simulated images")
+        plt.title("estimated distribution of discriminator ouputs")
+        plt.legend()
+        plt.savefig(out / "hist.png");plt.show()
  
         
     #save video with x evolution
@@ -418,8 +461,20 @@ if __name__ == "__main__" :
                         help="average number of photons per emitter")
     parser.add_argument("-w", "--kwidth", type=int, default=61, 
                         help="width of the convolution kernel")
-    parser.add_argument("-s", "--ksigma", type=float, default=8.,
+    parser.add_argument("-s", "--ksigma", type=float, default=None,
                         help="width of the gaussian in conv kernel")
+    parser.add_argument("--NA", type=float, default=1.15,
+                        help="numerical aperture \
+                        (to compute PSF width if no alpha nor FWHM provided)")
+    parser.add_argument("--px", type=int, default=103,
+                        help="size (in nm) for the physical pixels \
+                        (to compute PSF width if no alpha nor FWHM provided)")
+    parser.add_argument("--wavelength", type=int, default=509,
+                        help="fluorophore emission wavelength \
+                        (to compute PSF width if no alpha nor FWHM provided)")
+    parser.add_argument("--FWHM", type=int, default=None, 
+                        help="full width at half maximum (in nm) \
+                        (to compute PSF width if no alpha provided)")
     parser.add_argument("-u", "--undersampling", type=int, default=4,
                         help="downsampling factor")
     parser.add_argument("-e", "--esigma", type=float, default=0.,
@@ -472,8 +527,12 @@ if __name__ == "__main__" :
                         help="learning rate for x (inverse of lipschitz constant L)")
     parser.add_argument("-g_x_backtrackingmax", type=int, default=10,
                         help="max number of backtracking steps per FISTA iteration")
-    parser.add_argument("-g_b_lr", type=float, default=.001,
+    parser.add_argument("-g_b_lr", type=float, default=.01,
                         help="learning rate for b")
+    parser.add_argument("-g_bmin_lr", type=float, default=.01,
+                        help="learning rate for constant part of b called bmin \
+                        useful when there is a high constant background that \
+                        cannot be reached easely with a low g_b_lr")
     parser.add_argument("-g_x_eta", type=float, default=.98,
                         help="factor to reduce g_x_lr during FISTA backtracking iterations")
     
@@ -487,5 +546,5 @@ if __name__ == "__main__" :
     parser.add_argument("-r", "--plot_results", action="store_true",
                         help="plot and save x and b as plt with their scale")
 
-    main(sys.argv[1:], parser.parse_args(), parser)
-    #main(["test_7_big"], parser.parse_args(["test_7_big"]), parser)
+    #main(sys.argv[1:], parser.parse_args(), parser)
+    main(["../tests/real_100ms"], parser.parse_args(["../tests/real_100ms"]), parser)

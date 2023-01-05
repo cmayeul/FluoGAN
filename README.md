@@ -1,4 +1,4 @@
-# SRGAN
+# FluoGAN
 
 ## Help 
 

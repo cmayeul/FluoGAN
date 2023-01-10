@@ -14,7 +14,7 @@ If a parameter json file already exists, then you can directely use it as an inp
 
       ./main.py test/ -n_e 800
 
-The test data is a portion of a "ghost" sample with calibrated filaments. Here the two nearest filaments are separated by 300nm
+The test data is a portion of a "phantom" sample with calibrated filaments. Here the two nearest filaments are separated by 300nm
 
 ## Installation
 

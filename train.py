@@ -119,7 +119,8 @@ class FISTA_Optimizer:
             
             #find the right L :
             i = 0
-            while float(self.F(self.x)) > float(self.Q_2(self.L, self.x, self.u, loss)) \
+            ####################Attention < a la place de > ##############
+            while float(self.F(self.x)) < float(self.Q_2(self.L, self.x, self.u, loss)) \
                 and i < self.backtrackingmax :
                     
                 self.L *= self.eta
@@ -173,7 +174,10 @@ def train(G, D, Y,
     x = []
     b = []
     
-    total = []
+    sumx, sumb, sumysim, sumyreal = [], [], [], []
+    
+    Ymeansum = float(Y.mean(axis=0).sum())
+    Ymeansquaredsum = float((Y.mean(axis=0)**2).sum())
     
     rep = Path(rep)
     batch_size = params['batch_size']
@@ -231,20 +235,20 @@ def train(G, D, Y,
             G.zero_grad()
         
             #compute grads to regularize b and keep it smooth
-            G.bg.b.grad = params['g_b_grad'] * G.bg.spatial_grad_norm_derivative()[0,0] / G.bg.b.flatten().shape[0]
+            G.bg.b.grad = params['g_b_grad'] * G.bg.spatial_grad_norm_derivative()[0,0] / Ymeansquaredsum
             
             #sample a batch of simulated images 
             ysim = G(batch_size)
 
             #compute l2 fidelity term and its gradient
-            G.compute_grad_2(g_l2_func, ysim, [G.x, G.bg.b, G.bg.bmin])
+            G.compute_grad_2(g_l2_func, ysim, [G.x, G.bg.b])
             
             #compute gradient of expectation of the distance wrt x
-            G.compute_grad_2(g_D_func, ysim, [G.x, G.bg.b, G.bg.bmin])
+            G.compute_grad_2(g_D_func, ysim, [G.x, G.bg.b])
 
             #compute explicit loss to plot them and for FISTA next step update
-            g_x_l1   = params['g_x_l1']   *  G.x.abs().mean()
-            g_b_grad = params['g_b_grad'] *  G.bg.spatial_grad_norm().mean()
+            g_x_l1   = params['g_x_l1']   *  G.x.abs().mean() / Ymeansum
+            g_b_grad = params['g_b_grad'] *  G.bg.spatial_grad_norm().sum() / Ymeansquaredsum
             
             g_l2     = g_l2_func(ysim)
             g_D      = g_D_func(ysim)
@@ -256,14 +260,24 @@ def train(G, D, Y,
             g_losses['g_D'].append(float(g_D))
             g_losses['total'].append(float(g_b_grad +  g_l2 + g_D + g_x_l1))
             
-            #save sum of the signal 
-            total.append(float(G.x.sum()))
-            
             #update G.x with optimizer
             g_x_optimizer.backtracking_step(g_losses['total'][-1])
             # g_x_optimizer.step()
             g_b_optimizer.step()
             G.compute_phi()
+            
+            #save sum of the signal 
+            sumx.append(float(G.x.sum()))
+            sumb.append(float(G.bg.b.sum()))
+            sumysim.append(float(ysim.mean(axis=0).sum()))
+            sumyreal.append(Ymeansum)
+            sums = sumx, sumb, sumysim, sumyreal
+            
+            # #normalize x and b to fit signal sum
+            # ratio = (Ymeansum - sumysim[-1]) / Ymeansum
+            # G.x.data *= (1 + ratio * .05)
+            # G.bg.b.data *= (1 + ratio * .05)
+            # G.compute_phi()
                 
                 
-    return g_losses, d_losses, x, b, total
+    return g_losses, d_losses, x, b, sums

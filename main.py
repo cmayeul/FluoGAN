@@ -12,6 +12,7 @@ import numpy as np
 from pathlib import Path, PosixPath, WindowsPath
 from torchvision.io import read_video, write_video, read_image
 from matplotlib.image import imsave
+from tifffile import imwrite 
 
 from Generator import Generator
 from Discriminator import Discriminator
@@ -123,7 +124,7 @@ def load_data(params, device) :
                             for t,img in series[params["index"]].enumByFrame()])
       
     elif extension == "tif" : 
-        from tifffile import tifread
+        from tifffile import imread as tifread
         data = tifread(params["input"])
         data = torch.from_numpy(np.float_(data))
         
@@ -151,6 +152,11 @@ def load_data(params, device) :
     if params['crop'] is not None :
         xmin, ymin, xmax, ymax = params['crop']
         data = data[:, xmin:xmax, ymin:ymax]
+        
+    #check if this portion of data is not empty
+    if (data == 0).all() :
+        raise ValueError("this portion of data contains only zeros")
+        
     data = data.view(data.shape[0], 1, *data.shape[1:])
     data = data.to(device).to(torch.float)
     
@@ -187,7 +193,7 @@ def gen_synthetic_data(xreal, params, device) :
         plt.imshow(xreal.detach().cpu())
         plt.colorbar(orientation = 'horizontal' if xreal.shape[0] < xreal.shape[1] else 'vertical')
         plt.title("xreal")
-        plt.savefig(params["output"] / "xreal.png");plt.show()
+        plt.savefig(params["output"] / "xreal.png"); plt.close()
     
     #compute shape of output image 
     out_shape = (xreal.shape[0] // params["undersampling"], xreal.shape[1] // params["undersampling"])
@@ -231,6 +237,20 @@ def main(args, parsed_args, parser) :
     print(f"loaded {len(data)} images from {params['input']} with shape {tuple(data.shape[-2:])} to device {device}")
     print(f"output directory : {params['output']}")
     
+    #init learning set 
+    Y = data.view(data.shape[0], 1, data.shape[-2], data.shape[-1])
+    # Y *= 10
+    # Y[:,:,:20,:] = 0
+    # Y[:,:,40:,:] = 0
+    
+    #normalize Y background :
+    Ymin = Y.mean(axis=0).min()
+    Y = (Y - Ymin).abs()
+    
+    #normalize learning rates 
+    params['g_x_lr'] *= Y.shape[2] * Y.shape[3] * float(Y.mean())
+    params['g_b_lr'] *= Y.shape[2] * Y.shape[3] * float(Y.mean())
+    
     #initialize generator (x and b initizalized to 0 or from provided archive)
     if params['G'] is not None : 
         G = torch.load(params['G']).to(device)
@@ -242,13 +262,14 @@ def main(args, parsed_args, parser) :
                      alpha          = params["alpha"], 
                      esigma         = params["esigma"], 
                      fft            = params["fft"],
+                     b0             = 0*float(Y.mean(axis=0).quantile(.25)) * torch.ones(Y[0,0].shape)
                      ).to(device)
 
     #print PSF
     if params['plot_results'] : 
         plt.imshow(G.conv.kernel[0,0].detach().cpu())
         plt.title(f"Gaussian PSF, ksigma = {params['ksigma']} px")
-        plt.savefig(out / "PSF.png");plt.show()
+        plt.savefig(out / "PSF.png"); plt.close()
 
     #init discriminator (critic) or load it from archive
     if params['D'] is not None :
@@ -263,15 +284,12 @@ def main(args, parsed_args, parser) :
                       margin      = 1 #params["kwidth"] // (2 * params["undersampling"])
                       ).to(device)
 
-    #init learning set 
-    Y = data.view(data.shape[0], 1, data.shape[-2], data.shape[-1])
-    
     #init discriminator optimiser
     d_optimizer = torch.optim.Adam(D.parameters(), lr=params['d_lr'])
         
     #def the l2 fidelity term
     Ymean = Y.float().mean(axis=0)
-    g_l2_func = lambda y : params['g_l2'] * ((y-Ymean)**2).mean()
+    g_l2_func = lambda y : params['g_l2'] * ((y-Ymean)**2).sum() / float((Ymean**2).sum())
     
     #def the discriminator fidelity term
     g_D_func = lambda y : params['g_D'] * (1 - D(y)).mean() #* G.x.shape[0] * G.x.shape[1]
@@ -282,7 +300,9 @@ def main(args, parsed_args, parser) :
                     ksigma         = params["ksigma"], 
                     undersampling  = params["undersampling"], 
                     alpha          = params["alpha"], 
-                    esigma         = params["esigma"]
+                    esigma         = params["esigma"], 
+                    fft            = params["fft"],
+                    b0             = 0 * float(Y.mean(axis=0).quantile(.25)) * torch.ones(Y[0,0].shape)
                     ).to(device)
     G2.bg.b.data = G.bg.b.data
     
@@ -298,26 +318,22 @@ def main(args, parsed_args, parser) :
         return x.abs().mean()
     
     #init FISTA generator optimizer
-    prox_x = prox_l1(params['g_x_l1'])
+    prox_x = prox_l1(params['g_x_l1'] / float(Ymean.sum()))
     g_x_optimizer = FISTA_Optimizer(G.x,
                                     1 / params['g_x_lr'],
                                     f, g,
-                                    1 / params['g_x_eta'] ,
+                                    1 / params['g_x_eta'],
                                     prox=prox_x, 
                                     backtrackingmax=params['g_x_backtrackingmax'])
     # g_x_optimizer = ISTA_Optimizer([G.x], [params['g_x_l1']], [params['g_x_lr']])
-    g_b_optimizer = ISTA_Optimizer([G.bg.b, G.bg.bmin],  [0,0], 
-                                   [params['g_b_lr'], params['g_bmin_lr']])
-    
-    #normalize Y background :
-    Ymin = Y.mean(axis=0).min()
-    Y = (Y - Ymin).abs()
+    g_b_optimizer = ISTA_Optimizer([G.bg.b],  [0,0], 
+                                   [params['g_b_lr']])
     
     # start training
-    g_losses, d_losses, x, b, total  =  train(G, D, Y, 
-                                        g_x_optimizer, g_b_optimizer, d_optimizer,
-                                        params, out,
-                                        g_l2_func, g_D_func)
+    g_losses, d_losses, x, b, sums  =  train(G, D, Y, 
+                                       g_x_optimizer, g_b_optimizer, d_optimizer,
+                                       params, out,
+                                       g_l2_func, g_D_func)
     
 
     #save the pytorch models to restart learning later
@@ -332,27 +348,33 @@ def main(args, parsed_args, parser) :
         ymax = max(ysim.max(), yreal.max())
         o = 'vertical' if yreal.shape[0] > yreal.shape[1] else 'horizontal'
         plt.imshow(ysim, vmax=ymax, vmin=0);plt.colorbar(orientation=o);plt.title("ysim")
-        plt.savefig(out / "ysim.png");plt.show()
+        plt.savefig(out / "ysim.png") ; plt.close()
         plt.imshow(yreal, vmax=ymax, vmin=0);plt.colorbar(orientation=o);plt.title("yreal") 
-        plt.savefig(out / "yreal.png");plt.show()
+        plt.savefig(out / "yreal.png") ; plt.close()
         #mg = params['kwidth'] // 2
         xmax = max(G.x.detach().max().cpu(), 
                    G.bg.b.detach().max().cpu())
         #norm = SymLogNorm(vmin=0, vmax=xmax, linthresh=0.01)
         #norm = Normalize(vmin=0, vmax=xmax, clip=True)
         norm_x = PowerNorm(vmin=0, vmax=xmax, gamma=.5)
-        norm_b = PowerNorm(vmin=G.bg.bmin.cpu().detach(), 
-                           vmax=xmax+G.bg.bmin.cpu().detach(), gamma=.5)
+        norm_b = PowerNorm(vmin=0, vmax=xmax, gamma=.5)
         plt.imshow(G.x.detach().cpu(), norm=norm_x);plt.colorbar(orientation=o);plt.title("x") 
-        plt.savefig(out / "x.png");plt.show()
-        plt.imshow(G.bg.b.detach().cpu() + G.bg.bmin.cpu().detach(), norm=norm_b);plt.colorbar(orientation=o);plt.title("b") 
-        plt.savefig(out / "b.png");plt.show()
+        plt.savefig(out / "x.png") ; plt.close()
+        
+        plt.imshow(G.bg.b.detach().cpu(), norm=norm_b);plt.colorbar(orientation=o);plt.title("b") 
+        plt.savefig(out / "b.png") ; plt.close()
+
         imsave(out / "x-img.png", G.x.detach().cpu())
         imsave(out / "b-img.png", G.bg.b.detach().cpu())
         imsave(out / "x-img-bw.png", G.x.detach().cpu(), cmap="binary")
         imsave(out / "b-img-bw.png", G.bg.b.detach().cpu(), cmap="binary")
         imsave(out / "x-img-wb.png", G.x.detach().cpu(), cmap="gray")
         imsave(out / "b-img-wb.png", G.bg.b.detach().cpu(), cmap="gray")
+        imsave(out / "yreal-img-wb.png", Y[0,0].detach().cpu(), cmap="gray")
+        
+        imwrite(out / "x.tif", G.x.detach().cpu().numpy())
+        imwrite(out / "b.tif", G.bg.b.detach().cpu().numpy())
+        imwrite(out / "yreal.tif", Y[0,0].detach().cpu().numpy())
     
     #plot stepsizes (for adaptative learning rate backtracking algo)
     if params['plot_results'] :
@@ -362,7 +384,7 @@ def main(args, parsed_args, parser) :
         plt.title("evolution of the adaptative FISTA learning rate")
         plt.ylabel("learning rate")
         plt.xlabel("epochs")
-        plt.savefig(out / "stepsizes.png"); plt.show()
+        plt.savefig(out / "stepsizes.png"); plt.close()
     
     #plot learning curves
     if params["save_losses"] : 
@@ -371,7 +393,7 @@ def main(args, parsed_args, parser) :
             plt.plot(g_iter, v, label=k)
         plt.legend();plt.title("generator loss")
         plt.yscale("log")
-        plt.savefig(out / "g_loss_log.png");plt.show()
+        plt.savefig(out / "g_loss_log.png"); plt.close()
         
         
     if params["save_losses"] and params["n_epochs"] * params["n_generator"] > 50 :
@@ -379,22 +401,26 @@ def main(args, parsed_args, parser) :
             plt.plot(g_iter[50:], torch.tensor(v)[50:], label=k)
         plt.legend();plt.title("generator loss (excepted steps from 0 to 50)")
         plt.xlabel("optimization steps (=n_generator * epochs)")
-        plt.savefig(out / "g_loss.png");plt.show()
+        plt.savefig(out / "g_loss.png"); plt.close()
     
     d_iter = torch.arange(len(d_losses['total']))
     for k,v in d_losses.items() : 
         plt.plot(d_iter, v, label=k)
     plt.legend();plt.title("discriminator loss")
     plt.xlabel("optimization steps (=n_discriminator * epochs)")
-    plt.savefig(out / "d_loss.png");plt.show()
+    plt.savefig(out / "d_loss.png"); plt.close()
     
     #plot sum of the signal 
     if params['plot_results']:
-        plt.plot(range(len(total)), total)
-        plt.title('sum of x pixel values')
+        sumx, sumb, sumysim, sumyreal = sums
+        plt.plot(range(len(sumx)), sumx, label='sum of x pixel values')
+        plt.plot(range(len(sumb)), sumb, label='sum of b pixel values')
+        plt.plot(range(len(sumysim)), sumysim, label='sum of ysim pixel values')
+        plt.plot(range(len(sumyreal)), sumyreal, label='sum of yreal pixel values')
+        plt.legend()
         plt.xlabel('epoch')
         plt.ylabel('value')
-        plt.savefig(out / "sum_signal.png"); plt.show()
+        plt.savefig(out / "sum_signal.png"); plt.close()
     
     #plot histograms of discriminator outputs 
     if params['plot_results'] :
@@ -402,7 +428,7 @@ def main(args, parsed_args, parser) :
         plt.hist([float(D(y.repeat(1,1,1,1))) for y in Y], histtype="step", label="simulated images")
         plt.title("estimated distribution of discriminator ouputs")
         plt.legend()
-        plt.savefig(out / "hist.png");plt.show()
+        plt.savefig(out / "hist.png"); plt.close()
  
         
     #save video with x evolution
@@ -529,10 +555,6 @@ if __name__ == "__main__" :
                         help="max number of backtracking steps per FISTA iteration")
     parser.add_argument("-g_b_lr", type=float, default=.01,
                         help="learning rate for b")
-    parser.add_argument("-g_bmin_lr", type=float, default=.01,
-                        help="learning rate for constant part of b called bmin \
-                        useful when there is a high constant background that \
-                        cannot be reached easely with a low g_b_lr")
     parser.add_argument("-g_x_eta", type=float, default=.98,
                         help="factor to reduce g_x_lr during FISTA backtracking iterations")
     
@@ -542,9 +564,11 @@ if __name__ == "__main__" :
     parser.add_argument("-m", "--save_models", action="store_true",
                         help="save G and D pytorch modules after training")
     parser.add_argument("-v", "--save_video", action="store_true",
-                        help="ave a video to show x convergence")
+                        help="save a video to show x convergence")
     parser.add_argument("-r", "--plot_results", action="store_true",
                         help="plot and save x and b as plt with their scale")
+    parser.add_argument("--interactive", action="store_true", 
+                        help="use interactive matplotlib windows to plot results")
 
-    #main(sys.argv[1:], parser.parse_args(), parser)
-    main(["../tests/real_100ms"], parser.parse_args(["../tests/real_100ms"]), parser)
+    main(sys.argv[1:], parser.parse_args(), parser)
+    #main(["/home/mayeul/Bureau/acq_exp6"], parser.parse_args(["/home/mayeul/Bureau/acq_exp6"]), parser)

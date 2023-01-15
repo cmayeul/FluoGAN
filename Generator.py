@@ -50,7 +50,7 @@ class Generator(nn.Module):
             self.conv = Conv2dConstKernel(kwidth, ksigma, undersampling, x0.dtype, x0.device) #diffraction
         self.relu = nn.ReLU() 
         self.bg = Background(b0) #out of focus emitters
-        self.poisson = PoissonProcess(alpha) #emission
+        self.poisson = PoissonProcess(1) #emission
         self.noise = GaussianNoise(esigma) #acquisition noise
         self.relu2 = nn.ReLU()
         
@@ -86,7 +86,7 @@ class Generator(nn.Module):
         y = self.poisson(y)
         y = self.noise(y)
         y = self.relu2(y)
-        return y
+        return y * self.alpha
     
     def compute_grad(self, f, n_exp_estimate=10): 
         """
@@ -175,7 +175,6 @@ class Background(nn.Module):
         super().__init__()
         
         self.b = nn.Parameter(b0, requires_grad=True)
-        self.bmin = nn.Parameter(torch.zeros(1,), requires_grad=True)
         
         #def laplacian filter 
         laplacian = torch.tensor([[[[ 0,-1, 0],
@@ -201,7 +200,7 @@ class Background(nn.Module):
         self.pad_right = nn.ReplicationPad2d((0,1,0,0))
         
     def forward(self,x):
-        return x + self.b.expand(1,1,-1,-1) + self.bmin.expand(x.shape)
+        return x + self.b.expand(1,1,-1,-1)
     
     def spatial_grad_norm_derivative(self):
         b = self.b.detach()
@@ -286,6 +285,9 @@ class Conv2dConstKernel(nn.Module):
         #save it as a constant parameter
         self.kernel = nn.Parameter(kernel, requires_grad=False)
         
+        #build a padding layer to keep dim
+        self.pad = nn.ReflectionPad2d(kwidth // 2)
+        
     def forward(self,x) :
         """
         Applies conv with constant kernel and stride to input x
@@ -298,8 +300,7 @@ class Conv2dConstKernel(nn.Module):
         -------
         y : tensor of same shape like x
         """
-        return self.conv(x, self.kernel, \
-                        padding=(self.kwidth//2, self.kwidth//2), \
+        return self.conv(self.pad(x), self.kernel, \
                         stride=self.undersampling)
             
 

@@ -90,10 +90,13 @@ def load_parameters(args, parsed_args, parser) :
                                  px / FWHM or px / NA / wavelength to modelize PSF")
             params["FWHM"] = int(0.61 * params["wavelength"] / params["NA"])
         params["ksigma"] = params["FWHM"] / 2.335 / params["px"] * params["undersampling"]
+    
+    return params
+
+def save_parameters(params):
         
     #save parameters in a json file in output directory 
     params["output"].mkdir(exist_ok=True)
-    print(f"saving current parameters to {params['output'] / 'parameters.json'}")
     
     def save_path(p): 
         try : 
@@ -105,8 +108,8 @@ def load_parameters(args, parsed_args, parser) :
     
     with open(params['output'] / 'parameters.json', "w") as f : 
         json.dump(params, f, indent=2, default=save_path)
-    
-    return params
+        
+    print(f"saved current parameters to {params['output'] / 'parameters.json'}")
 
 def load_data(params, device) :
     if params["input"] is None  :
@@ -156,6 +159,10 @@ def load_data(params, device) :
     #check if this portion of data is not empty
     if (data == 0).all() :
         raise ValueError("this portion of data contains only zeros")
+        
+    #estimate alpha if not provided
+    if params["alpha"] is None : 
+        params['alpha'] = float((data.std(axis=0)**2 / data.mean(axis=0)).mean())
         
     data = data.view(data.shape[0], 1, *data.shape[1:])
     data = data.to(device).to(torch.float)
@@ -231,6 +238,7 @@ def main(args, parsed_args, parser) :
     params = load_parameters(args, parsed_args, parser)
     device = init_device(params)
     data   = load_data(params, device)
+    save_parameters(params)
     
     out = Path(params['output'])
     
@@ -451,7 +459,8 @@ if __name__ == "__main__" :
                             2. a json parameter file containing path to input data \
                             3. a directory containing a file called 'parameter.json' \
                             Remark 1 : the image serie should be well aligned to yield good results \
-                            Remark 2 : this software creates or overwrite the output directory \
+                            Remark 2 : for a quick configuration you can provide either FWHM or wavelength and numerical aperture. Then configure the pixel size. The only tricky parameter you have to find manually is the generator l1 regularization parameter g_x_l1. Choose a small crop of the images and try to find the best regularization without discriminator (n_discriminator = 0 and g_D = 0). Then try to use the discriminator on the complete images. \
+                            Remark 3 : this software creates or overwrite the output directory \
                                 to save parameters and results (default : current directory)")
     
     parser.add_argument("-o", "--output", type=Path, default=Path("./"), 
@@ -483,7 +492,7 @@ if __name__ == "__main__" :
 
     
     #model for the generator
-    parser.add_argument("-a", "--alpha", type=int, default=12, 
+    parser.add_argument("-a", "--alpha", type=int, default=None, 
                         help="average number of photons per emitter")
     parser.add_argument("-w", "--kwidth", type=int, default=61, 
                         help="width of the convolution kernel")
@@ -501,7 +510,7 @@ if __name__ == "__main__" :
     parser.add_argument("--FWHM", type=int, default=None, 
                         help="full width at half maximum (in nm) \
                         (to compute PSF width if no alpha provided)")
-    parser.add_argument("-u", "--undersampling", type=int, default=4,
+    parser.add_argument("-u", "--undersampling", type=int, default=6,
                         help="downsampling factor")
     parser.add_argument("-e", "--esigma", type=float, default=0.,
                         help="standard deviation of the gaussian noise")
@@ -524,9 +533,9 @@ if __name__ == "__main__" :
     #training generator
     parser.add_argument("-g_D", type=float, default=1e-2,
                         help="weight for discriminator distance")
-    parser.add_argument("-g_l2", type=float, default=1e-4,
+    parser.add_argument("-g_l2", type=float, default=1,
                         help="weight for L2 distance")
-    parser.add_argument("-g_x_l1", type=float, default=1e-3,
+    parser.add_argument("-g_x_l1", type=float, default=0.1,
                         help="param for L1 reg on x")
     parser.add_argument("-g_b_grad", type=float, default=1.,
                         help="param for smooth reg on b")
@@ -547,15 +556,15 @@ if __name__ == "__main__" :
                         help="use FFT to compute convolution with the PSF")
     
     #learning rates
-    parser.add_argument("-d_lr", type=float, default=1e-5,
+    parser.add_argument("-d_lr", type=float, default=1e-6,
                         help="learning rate for the discriminator update")
     parser.add_argument("-g_x_lr", type=float, default=1.,
                         help="learning rate for x (inverse of lipschitz constant L)")
-    parser.add_argument("-g_x_backtrackingmax", type=int, default=10,
+    parser.add_argument("-g_x_backtrackingmax", type=int, default=1,
                         help="max number of backtracking steps per FISTA iteration")
-    parser.add_argument("-g_b_lr", type=float, default=.01,
+    parser.add_argument("-g_b_lr", type=float, default=1.,
                         help="learning rate for b")
-    parser.add_argument("-g_x_eta", type=float, default=.98,
+    parser.add_argument("-g_x_eta", type=float, default=.95,
                         help="factor to reduce g_x_lr during FISTA backtracking iterations")
     
     #visualization parameters
@@ -571,4 +580,4 @@ if __name__ == "__main__" :
                         help="use interactive matplotlib windows to plot results")
 
     main(sys.argv[1:], parser.parse_args(), parser)
-    #main(["/home/mayeul/Bureau/acq_exp6"], parser.parse_args(["/home/mayeul/Bureau/acq_exp6"]), parser)
+    #main(["/home/mayeul/Desktop/shift_correction"], parser.parse_args(["/home/mayeul/Desktop/shift_correction"]), parser)

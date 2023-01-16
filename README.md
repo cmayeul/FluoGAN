@@ -22,14 +22,14 @@ To find the best regularization it is better not to use the discriminator, which
 
 ### Example to find best regularization
 
-`./main.py images.tif --FWHM 413 -g_x_l1 0.2 -g_D 0 -n_d 0 -n_e 1000 -x 0 0 100 100`
+	./main.py images.tif --FWHM 413 -g_x_l1 0.2 -g_D 0 -n_d 0 -n_e 1000 -x 0 0 100 100
 
 
 ## Full Example
 
 Once you found the best parameter `-g_x_l1` for regularization then you can start the program with discriminator on the full sample with more epochs.
 
-`./main.py images.tif --FWHM 413 -g_x_l1 0.2 -g_D 1 -n_d 1 -n_e 4000 -x 0 0 100 100`
+	./main.py images.tif --FWHM 413 -g_x_l1 0.2 -g_D 1 -n_d 1 -n_e 4000
 
 You can save the results and different curves using the `-o` option and `-l` `-m` `-v` or `-r`
 
@@ -39,7 +39,7 @@ Requires python 3 and pytorch >= 1.10
 
 Install required python modules (Linux) : 
 
-      `sudo pip3 install torch torchvision matplotlib tifffile read_lif tqdm czifile`
+      sudo pip3 install torch torchvision matplotlib tifffile read_lif tqdm czifile
       
 See https://pytorch.org to install PyTorch on different platforms
 

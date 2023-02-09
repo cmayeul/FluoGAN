@@ -16,7 +16,7 @@ The corresponding options are respectively `--FWHM` or `--NA --wavelength`
 	
 ###  Find the best regularisation 
 
-Try to apply the software on a small crop of your sample and optimize manually the regularization parameter `-g_x_l1`. It is related to the proportion of signal compared to the backgroud. 
+Try to apply the software on a small crop of your sample and optimize manually the regularization parameters `-g_x_l1` and `-g_b_grad`. There are related to the proportion of signal compared to the backgroud and the smoothness of the background.
 
 To find the best regularization it is better not to use the discriminator, which means `-g_D 0` and `-n_d 0`. First it will be faster and in any case you have to achieve first convergence with L2 distance before using the discriminator distance to improve results.
 
@@ -24,14 +24,22 @@ To find the best regularization it is better not to use the discriminator, which
 
 	./main.py images.tif --FWHM 413 -g_x_l1 0.2 -g_D 0 -n_d 0 -n_e 1000 -x 0 0 100 100
 
+### Example to run full algorithm
 
-## Full Example
+Once you found the best parameters `-g_x_l1` and `g_b_grad` for regularization then you can start the program with discriminator on the full sample with more epochs.
 
-Once you found the best parameter `-g_x_l1` for regularization then you can start the program with discriminator on the full sample with more epochs.
-
-	./main.py images.tif --FWHM 413 -g_x_l1 0.2 -g_D 1 -n_d 1 -n_e 4000
+	./main.py images.tif --FWHM 413 -g_x_l1 0.2 -g_D 1 -n_d 1 -n_e 5000
 
 You can save the results and different curves using the `-o` option and `-l` `-m` `-v` or `-r`
+
+## Full exemple with phantom data 
+
+Two different sets of parameters are provided in the `tests/` folder. Their only difference is the use of discriminator or not. You can run them using the following commands : 
+
+	./main.py tests/with_discriminator
+	./main.py tests/without_discriminator
+	
+The results are automatically saved in the corresponding folder.
 
 ## Installation
 

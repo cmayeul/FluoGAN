@@ -22,13 +22,13 @@ To find the best regularization it is better not to use the discriminator, which
 
 ### Example to find best regularization
 
-	./main.py images.tif --FWHM 413 -g_x_l1 0.2 -g_D 0 -n_d 0 -n_e 1000 -x 0 0 100 100
+	./main.py images.tif --FWHM 318 -g_x_l1 0.8 -g_D 0 -n_d 0 -n_e 1000 -x 0 0 50 50
 
 ### Example to run full algorithm
 
 Once you found the best parameters `-g_x_l1` and `g_b_grad` for regularization then you can start the program with discriminator on the full sample with more epochs.
 
-	./main.py images.tif --FWHM 413 -g_x_l1 0.2 -g_D 1 -n_d 1 -n_e 5000
+	./main.py images.tif --FWHM 318 -g_x_l1 0.8 -g_D 1 -n_d 1 -n_e 5000
 
 You can save the results and different curves using the `-o` option and `-l` `-m` `-v` or `-r`
 

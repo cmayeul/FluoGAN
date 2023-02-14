@@ -527,17 +527,17 @@ if __name__ == "__main__" :
                         help="kernel size for max pool layer")
     
     #training discriminator
-    parser.add_argument("-d_gp", type=float, default=10.,
+    parser.add_argument("-d_gp", type=float, default=100,
                         help="regularization param for grad penalty (WGAN-GP)")
     
     #training generator
-    parser.add_argument("-g_D", type=float, default=1e-2,
+    parser.add_argument("-g_D", type=float, default=1,
                         help="weight for discriminator distance")
-    parser.add_argument("-g_l2", type=float, default=1,
+    parser.add_argument("-g_l2", type=float, default=10,
                         help="weight for L2 distance")
-    parser.add_argument("-g_x_l1", type=float, default=0.1,
+    parser.add_argument("-g_x_l1", type=float, default=1,
                         help="param for L1 reg on x")
-    parser.add_argument("-g_b_grad", type=float, default=1.,
+    parser.add_argument("-g_b_grad", type=float, default=100,
                         help="param for smooth reg on b")
     
     
@@ -546,7 +546,7 @@ if __name__ == "__main__" :
                         help="number of discriminator update during 1 epoch")
     parser.add_argument("-n_g", "--n_generator", type=int, default=1,
                         help="number of generator update during 1 epoch")
-    parser.add_argument("-n_e", "--n_epochs", type=int, default=2000,
+    parser.add_argument("-n_e", "--n_epochs", type=int, default=5000,
                         help="number of epochs")
     parser.add_argument("-B", "--batch_size", type=int, default=32,
                         help="batch size for D and G training")
@@ -558,11 +558,11 @@ if __name__ == "__main__" :
     #learning rates
     parser.add_argument("-d_lr", type=float, default=1e-6,
                         help="learning rate for the discriminator update")
-    parser.add_argument("-g_x_lr", type=float, default=1.,
+    parser.add_argument("-g_x_lr", type=float, default=1,
                         help="learning rate for x (inverse of lipschitz constant L)")
     parser.add_argument("-g_x_backtrackingmax", type=int, default=1,
                         help="max number of backtracking steps per FISTA iteration")
-    parser.add_argument("-g_b_lr", type=float, default=1.,
+    parser.add_argument("-g_b_lr", type=float, default=1,
                         help="learning rate for b")
     parser.add_argument("-g_x_eta", type=float, default=.95,
                         help="factor to reduce g_x_lr during FISTA backtracking iterations")

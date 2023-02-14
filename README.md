@@ -36,8 +36,8 @@ You can save the results and different curves using the `-o` option and `-l` `-m
 
 Two different sets of parameters are provided in the `tests/` folder. Their only difference is the use of discriminator or not. You can run them using the following commands : 
 
-	./main.py tests/with_discriminator
-	./main.py tests/without_discriminator
+	./main.py tests/with_discriminator.json
+	./main.py tests/without_discriminator.json
 	
 The results are automatically saved in the corresponding folder.
 

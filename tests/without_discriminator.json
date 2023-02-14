@@ -1,6 +1,6 @@
 {
-  "input": "../input_data.tif",
-  "output": ".",
+  "input": "input_data.tif",
+  "output": "without_discriminator",
   "params": null,
   "G": null,
   "D": null,
